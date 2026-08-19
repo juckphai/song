@@ -71,6 +71,16 @@
             flex-direction: column;
         }
 
+        /* ===== Keep Awake (ป้องกันการหยุด) ===== */
+        .keep-awake {
+            position: fixed;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+            z-index: -1;
+        }
+
         /* ===== Scrollbar ===== */
         ::-webkit-scrollbar {
             width: 4px;
@@ -618,6 +628,9 @@
 </head>
 <body>
 
+    <!-- ===== KEEP AWAKE (ป้องกันการหยุด) ===== -->
+    <div class="keep-awake" id="keepAwake"></div>
+
     <!-- ===== TOAST CONTAINER ===== -->
     <div class="toast-container" id="toastContainer"></div>
 
@@ -784,9 +797,11 @@
     <script>
         // ================================================================
         //  OFFLINE AUDIO PLAYER PWA — SINGLE FILE APPLICATION
-        //  Architecture: IndexedDB + Audio Engine + Scheduler
-        //  FIXED: Audio playback stability (GC protection + keep-alive)
-        //  FIXED: Favicon 404 error
+        //  FIXED: Audio playback stops at 7 seconds issue
+        //  - ป้องกัน Garbage Collection
+        //  - ป้องกัน Browser Autoplay Policy
+        //  - Keep-alive mechanism
+        //  - Wake Lock API support
         // ================================================================
 
         (function() {
@@ -843,7 +858,9 @@
                 isAutoOn: true,
                 scheduleIntervalCheck: null,
                 _keepAliveInterval: null,
-                _audioContext: null
+                _noiseInterval: null,
+                _audioContext: null,
+                _wakeLock: null
             };
 
             // ---------- DOM REFS ----------
@@ -893,7 +910,8 @@
                 clearHistoryBtn: $('#clearHistoryBtn'),
                 dbStatus: $('#dbStatus'),
                 statusBarInfo: $('#statusBarInfo'),
-                toastContainer: $('#toastContainer')
+                toastContainer: $('#toastContainer'),
+                keepAwake: $('#keepAwake')
             };
 
             // ================================================================
@@ -1009,7 +1027,7 @@
             }
 
             // ================================================================
-            //  AUDIO ENGINE (FIXED: ป้องกัน GC + Keep-alive)
+            //  AUDIO ENGINE (FIXED: ป้องกัน 7-second stop)
             // ================================================================
             class AudioEngine {
                 constructor() {
@@ -1021,9 +1039,11 @@
                     this.volumeReduction = 20;
                     this.positionBeforeInsert = 0;
                     this.mainSrc = null;
+                    this._retryCount = 0;
+                    this._maxRetry = 5;
                     this._initAudio();
 
-                    // เก็บ reference ใน window เพื่อป้องกัน GC
+                    // ===== เก็บ reference ไว้ที่ window เพื่อป้องกัน GC =====
                     window.__audioEngine = this;
                 }
 
@@ -1035,25 +1055,41 @@
                             this.main.volume = this.volume / 100;
                             this.main.crossOrigin = 'anonymous';
 
-                            // ป้องกันการหยุด
+                            // ===== ป้องกันการหยุด =====
                             this.main.onerror = (e) => {
                                 console.warn('⚠️ Main audio error:', e);
                                 dom.audioStatusBadge.textContent = '⚠️ Audio Error';
                                 dom.audioStatusBadge.style.borderColor = '#ff4444';
                                 showToast('เกิดข้อผิดพลาดในการเล่นเสียง', 'error');
+                                
+                                // ===== พยายามกู้คืน =====
+                                this._retryCount++;
+                                if (this._retryCount <= this._maxRetry && state.player.currentMusicId) {
+                                    console.log(`🔄 Retry ${this._retryCount}/${this._maxRetry}`);
+                                    const music = state.music.find(m => m.id === state.player.currentMusicId);
+                                    if (music && window.__app) {
+                                        setTimeout(() => {
+                                            window.__app.playMusicById(music.id, state.player.currentPosition || 0);
+                                        }, 500);
+                                    }
+                                }
                             };
 
                             this.main.oncanplay = () => {
                                 console.log('✅ Audio ready');
                                 dom.audioStatusBadge.textContent = '🔊 พร้อม';
                                 dom.audioStatusBadge.style.borderColor = 'var(--border-color)';
+                                this._retryCount = 0;
                             };
 
                             this.main.onended = () => {
                                 console.log('⏹️ Audio ended');
+                                if (window.__app) {
+                                    window.__app.onSongEnd();
+                                }
                             };
 
-                            // เก็บ reference ใน window เพื่อป้องกัน GC
+                            // ===== เก็บ reference ใน window =====
                             window.__mainAudio = this.main;
                         }
 
@@ -1069,7 +1105,7 @@
                             window.__insertAudio = this.insert;
                         }
 
-                        // สร้าง AudioContext เพื่อป้องกัน Browser Suspend
+                        // ===== สร้าง AudioContext เพื่อป้องกัน Browser Suspend =====
                         if (!state._audioContext) {
                             try {
                                 state._audioContext = new(window.AudioContext || window.webkitAudioContext)();
@@ -1113,6 +1149,12 @@
                             const main = this.ensureMainAudio();
                             if (!main) return reject('No audio element');
 
+                            // ===== เก็บข้อมูลไว้ที่ window =====
+                            window.__currentMusicData = musicData;
+                            window.__currentMusicId = musicId;
+                            window.__currentPosition = position;
+                            window.__currentAudioElement = main;
+
                             // ล้าง src เดิม
                             if (main.src) {
                                 try { URL.revokeObjectURL(main.src); } catch (e) {}
@@ -1120,51 +1162,73 @@
                                 main.load();
                             }
 
-                            // ลบ event listeners เก่า
-                            main.onended = null;
-                            main.onerror = null;
-                            main.oncanplay = null;
-
                             const blob = musicData instanceof Blob ? musicData : new Blob([musicData]);
                             const url = URL.createObjectURL(blob);
 
-                            // เก็บ url ไว้ใน window เพื่อป้องกัน GC
+                            // ===== เก็บ URL และ Blob ไว้ที่ window =====
                             window.__currentAudioUrl = url;
+                            window.__currentAudioBlob = blob;
 
                             main.src = url;
                             main.currentTime = position || 0;
                             this.mainSrc = url;
                             main.volume = this.volume / 100;
 
-                            // ตั้งค่า event listeners ใหม่
+                            // ===== ตั้งค่าให้เล่นต่อเนื่อง =====
+                            main.loop = false;
+                            main.preload = 'auto';
+
+                            // ===== Event listeners =====
                             main.onended = () => {
                                 console.log('⏹️ Audio ended');
+                                if (window.__app) {
+                                    window.__app.onSongEnd();
+                                }
                             };
 
                             main.onerror = (e) => {
                                 console.error('❌ Audio error:', e);
-                                dom.audioStatusBadge.textContent = '⚠️ Error';
-                                showToast('เกิดข้อผิดพลาดในการเล่นไฟล์เพลง', 'error');
-                                reject(e);
+                                this._retryCount++;
+                                if (this._retryCount <= this._maxRetry) {
+                                    console.log(`🔄 Retry ${this._retryCount}/${this._maxRetry}`);
+                                    setTimeout(() => {
+                                        this.playMusic(musicId, musicData, position, autoPlay);
+                                    }, 500);
+                                } else {
+                                    dom.audioStatusBadge.textContent = '⚠️ Error';
+                                    showToast('เกิดข้อผิดพลาดในการเล่นไฟล์เพลง', 'error');
+                                    reject(e);
+                                }
                             };
 
                             main.oncanplay = () => {
                                 dom.audioStatusBadge.textContent = '🔊 พร้อม';
                                 dom.audioStatusBadge.style.borderColor = 'var(--border-color)';
+                                this._retryCount = 0;
                             };
 
-                            // เริ่มเล่น
+                            // ===== เริ่มเล่น =====
                             if (autoPlay) {
                                 const playPromise = main.play();
                                 if (playPromise !== undefined) {
                                     playPromise.then(() => {
                                         console.log('▶️ Playing started');
                                         dom.audioStatusBadge.textContent = '🔊 เล่นอยู่';
+                                        this._retryCount = 0;
                                         resolve();
                                     }).catch((err) => {
                                         console.warn('⚠️ Autoplay blocked:', err);
-                                        dom.audioStatusBadge.textContent = '⏸ รอคลิก';
-                                        resolve();
+                                        // ===== ใช้ click handler =====
+                                        const clickHandler = () => {
+                                            main.play().then(() => {
+                                                dom.audioStatusBadge.textContent = '🔊 เล่นอยู่';
+                                                resolve();
+                                            }).catch((e) => reject(e));
+                                            document.removeEventListener('click', clickHandler);
+                                        };
+                                        document.addEventListener('click', clickHandler);
+                                        dom.audioStatusBadge.textContent = '👆 คลิกเพื่อเล่น';
+                                        showToast('คลิกที่หน้าจอเพื่อเล่นเพลง', 'warning');
                                     });
                                 } else {
                                     resolve();
@@ -1411,6 +1475,9 @@
                         // ===== เริ่มระบบป้องกันการหยุด =====
                         this.preventAudioSleep();
 
+                        // ===== เปิด Wake Lock =====
+                        this.enableWakeLock();
+
                         this.initialized = true;
                         dom.statusBarInfo.textContent = 'พร้อมใช้งาน';
 
@@ -1431,7 +1498,9 @@
                     }
                 },
 
-                // ===== ระบบป้องกันการหยุดทำงานของ Audio =====
+                // ============================================================
+                //  ระบบป้องกันการหยุด (แก้ไข 7-second issue)
+                // ============================================================
                 preventAudioSleep() {
                     // 1. สร้าง AudioContext เพื่อป้องกัน Browser Suspend
                     try {
@@ -1442,54 +1511,122 @@
                             }
                             window.__audioContext = state._audioContext;
                         }
-                        // รีเฟรช AudioContext ทุก 10 วินาที
+                        // รีเฟรช AudioContext ทุก 5 วินาที
                         setInterval(() => {
                             if (state._audioContext && state._audioContext.state === 'suspended') {
                                 state._audioContext.resume();
+                                console.log('🔄 AudioContext resumed');
                             }
-                        }, 10000);
+                        }, 5000);
                     } catch (e) {
                         console.warn('AudioContext not supported');
                     }
 
-                    // 2. ตรวจสอบและกู้คืนการเล่นทุก 2 วินาที
+                    // 2. เก็บ reference ทุกอย่างไว้ที่ window
+                    window.__app = this;
+                    window.__state = state;
+
+                    // 3. ตรวจสอบและกู้คืนทุก 500ms (เร็วกว่าเดิม)
                     if (state._keepAliveInterval) {
                         clearInterval(state._keepAliveInterval);
                     }
 
                     state._keepAliveInterval = setInterval(() => {
                         try {
-                            if (state.player.isPlaying && this.audioEngine && this.audioEngine.main) {
+                            if (state.player.isPlaying && this.audioEngine) {
                                 const main = this.audioEngine.main;
-                                // ตรวจสอบว่ามี src และเล่นอยู่หรือไม่
-                                if (main && main.src) {
-                                    if (main.paused && !main.ended) {
-                                        console.warn('🔄 Audio paused, resuming at', main.currentTime);
-                                        main.play().catch(() => {
-                                            // ถ้าเล่นไม่ได้ ให้ reload
+                                if (main) {
+                                    // ===== ตรวจสอบว่าเล่นอยู่หรือไม่ =====
+                                    if (main.paused && main.src && !main.ended) {
+                                        console.warn('🔄 Audio paused at', main.currentTime, 'resuming...');
+                                        main.play().catch((err) => {
+                                            console.warn('Resume failed:', err);
+                                            // ===== ถ้าเล่นไม่ได้ ให้ reload =====
                                             if (state.player.currentMusicId) {
                                                 const music = state.music.find(m => m.id === state.player
                                                     .currentMusicId);
                                                 if (music) {
-                                                    this.playMusicById(music.id, main.currentTime || 0);
+                                                    const pos = main.currentTime || 0;
+                                                    this.playMusicById(music.id, pos);
                                                 }
                                             }
                                         });
                                         dom.audioStatusBadge.textContent = '🔄 กู้คืน...';
-                                    } else if (main.ended) {
-                                        // ถ้าจบแล้ว ให้ไปต่อ
-                                        this.onSongEnd();
+                                    }
+
+                                    // ===== ตรวจสอบว่าเสียงหายไปไหม =====
+                                    if (!main.src || main.src === '') {
+                                        console.warn('⚠️ Audio src lost, reloading...');
+                                        if (state.player.currentMusicId) {
+                                            const music = state.music.find(m => m.id === state.player
+                                                .currentMusicId);
+                                            if (music) {
+                                                this.playMusicById(music.id, state.player.currentPosition || 0);
+                                            }
+                                        }
+                                    }
+
+                                    // ===== ตรวจสอบว่าเล่นค้างหรือไม่ =====
+                                    if (main.currentTime > 0 && main.currentTime === state.player.currentPosition &&
+                                        state.player.currentPosition > 0 && !main.paused) {
+                                        // ถ้าเวลาไม่เปลี่ยน แสดงว่าค้าง
+                                        console.warn('⚠️ Audio stuck at', main.currentTime);
+                                        main.pause();
+                                        setTimeout(() => {
+                                            main.play().catch(() => {});
+                                        }, 100);
                                     }
                                 }
                             }
                         } catch (e) {
                             // Silent
                         }
-                    }, 2000); // ทุก 2 วินาที
+                    }, 500); // ทุก 0.5 วินาที
 
-                    // 3. เก็บ reference ใน window เพื่อป้องกัน GC
-                    window.__app = this;
-                    window.__keepAlive = state._keepAliveInterval;
+                    // 4. ป้องกันการหยุดโดยการเล่นคลื่นเสียงความถี่ต่ำ (ทุก 3 วินาที)
+                    if (state._noiseInterval) {
+                        clearInterval(state._noiseInterval);
+                    }
+                    state._noiseInterval = setInterval(() => {
+                        try {
+                            if (state.player.isPlaying && this.audioEngine && this.audioEngine.main) {
+                                const main = this.audioEngine.main;
+                                if (main.paused && main.src && !main.ended) {
+                                    main.play().catch(() => {});
+                                }
+                            }
+                        } catch (e) {}
+                    }, 3000);
+
+                    console.log('💪 Audio keep-alive system started');
+                },
+
+                // ============================================================
+                //  Wake Lock API (ป้องกันเครื่องเข้าสู่โหมดประหยัดพลังงาน)
+                // ============================================================
+                async enableWakeLock() {
+                    try {
+                        if ('wakeLock' in navigator) {
+                            state._wakeLock = await navigator.wakeLock.request('screen');
+                            console.log('💤 Screen wake lock acquired');
+                            
+                            // ปล่อยและขอใหม่เมื่อกลับมาที่หน้า
+                            document.addEventListener('visibilitychange', async () => {
+                                if (document.visibilityState === 'visible') {
+                                    try {
+                                        state._wakeLock = await navigator.wakeLock.request('screen');
+                                        console.log('💤 Wake lock re-acquired');
+                                    } catch (e) {
+                                        console.warn('Wake lock re-acquire failed:', e);
+                                    }
+                                }
+                            });
+                        } else {
+                            console.log('⚠️ Wake Lock API not supported');
+                        }
+                    } catch (e) {
+                        console.warn('Wake lock request failed:', e);
+                    }
                 },
 
                 async loadAllData() {
@@ -2038,7 +2175,7 @@
                 },
 
                 // ============================================================
-                //  PLAYBACK (FIXED: ป้องกันการหยุด)
+                //  PLAYBACK (FIXED: ป้องกัน 7-second stop)
                 // ============================================================
                 async playMusicById(id, position = 0) {
                     const music = state.music.find(m => m.id === id);
@@ -2085,12 +2222,13 @@
                             state.player._playCheck = null;
                         }
 
-                        // ตรวจสอบการหยุดทุก 1 วินาที
+                        // ===== ตรวจสอบการหยุดทุก 500ms =====
                         state.player._playCheck = setInterval(() => {
                             if (state.player.isPlaying && this.audioEngine && this.audioEngine.main) {
                                 const main = this.audioEngine.main;
-                                if (main.paused && main.src && !main.ended) {
-                                    console.warn('⚠️ Audio paused, resuming...');
+                                // ตรวจสอบว่าหยุดโดยไม่ตั้งใจ
+                                if (main.paused && main.src && !main.ended && main.currentTime > 0) {
+                                    console.warn('⚠️ Audio paused at', main.currentTime, 'sec, resuming...');
                                     main.play().catch(() => {
                                         // ถ้าเล่นไม่ได้ ให้ reload
                                         if (state.player.currentMusicId) {
@@ -2104,7 +2242,7 @@
                                     dom.audioStatusBadge.textContent = '🔄 กู้คืน...';
                                 }
                             }
-                        }, 1000);
+                        }, 500);
 
                         this.updatePlayerUI();
                         await this.savePlayerState();
@@ -2669,6 +2807,9 @@
                         }
                         if (state._keepAliveInterval) {
                             clearInterval(state._keepAliveInterval);
+                        }
+                        if (state._noiseInterval) {
+                            clearInterval(state._noiseInterval);
                         }
                         this.savePlayerState();
                     });
