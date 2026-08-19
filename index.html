@@ -761,7 +761,7 @@
                 <div class="flex-between">
                     <span class="card-title">ประวัติการทำงาน <span id="historyCount" class="text-muted" style="font-size:0.7rem;"></span></span>
                     <div style="display:flex; gap:6px;">
-                        <button class="btn-sm" id="clearHistoryBtn"><i class="fas fa-trash-alt"></i> ล้าง</button>
+                        <button class="btn-sm danger" id="clearHistoryBtn"><i class="fas fa-trash-alt"></i> ล้าง</button>
                         <button class="btn-sm success" id="exportCsvBtn"><i class="fas fa-file-csv"></i> Export CSV</button>
                     </div>
                 </div>
@@ -785,8 +785,8 @@
         // ================================================================
         //  OFFLINE AUDIO PLAYER PWA — SINGLE FILE APPLICATION
         //  Architecture: IndexedDB + Audio Engine + Scheduler
-        //  Follows the Offline-first principle from 0111.txt
-        //  FIXED: Audio playback stability + Favicon 404
+        //  FIXED: Audio playback stability (GC protection + keep-alive)
+        //  FIXED: Favicon 404 error
         // ================================================================
 
         (function() {
@@ -835,17 +835,15 @@
                     currentInsertId: null,
                     duration: 0,
                     currentTime: 0,
-                    audio: null,
-                    insertAudio: null,
                     timer: null,
-                    insertTimer: null,
-                    schedulerInterval: null,
                     _playCheck: null,
                     _loadRetryCount: 0
                 },
                 currentGroupFilter: 'all',
                 isAutoOn: true,
-                scheduleIntervalCheck: null
+                scheduleIntervalCheck: null,
+                _keepAliveInterval: null,
+                _audioContext: null
             };
 
             // ---------- DOM REFS ----------
@@ -855,7 +853,6 @@
             const dom = {
                 tabs: $$('.tab-btn'),
                 panels: $$('.panel'),
-                // Player
                 playBtn: $('#playBtn'),
                 prevBtn: $('#prevBtn'),
                 nextBtn: $('#nextBtn'),
@@ -870,39 +867,32 @@
                 playlistBadge: $('#playlistBadge'),
                 statusBadge: $('#statusBadge'),
                 audioStatusBadge: $('#audioStatusBadge'),
-                // Music
                 musicList: $('#musicList'),
                 musicCount: $('#musicCount'),
                 musicFileInput: $('#musicFileInput'),
                 musicUploadArea: $('#musicUploadArea'),
                 addMusicBtn: $('#addMusicBtn'),
-                // Insert
                 insertList: $('#insertList'),
                 insertCount: $('#insertCount'),
                 insertFileInput: $('#insertFileInput'),
                 insertUploadArea: $('#insertUploadArea'),
                 addInsertBtn: $('#addInsertBtn'),
                 insertGroupFilters: $$('.insert-group-filter'),
-                // Playlist
                 playlistList: $('#playlistList'),
                 newPlaylistBtn: $('#newPlaylistBtn'),
-                // Schedule
                 scheduleList: $('#scheduleList'),
                 scheduleEmpty: $('#scheduleEmpty'),
                 addScheduleBtn: $('#addScheduleBtn'),
                 autoToggle: $('#autoToggle'),
                 autoStartTime: $('#autoStartTime'),
                 autoEndTime: $('#autoEndTime'),
-                // History
                 historyList: $('#historyList'),
                 historyEmpty: $('#historyEmpty'),
                 historyCount: $('#historyCount'),
                 exportCsvBtn: $('#exportCsvBtn'),
                 clearHistoryBtn: $('#clearHistoryBtn'),
-                // Status
                 dbStatus: $('#dbStatus'),
                 statusBarInfo: $('#statusBarInfo'),
-                // Toast
                 toastContainer: $('#toastContainer')
             };
 
@@ -910,12 +900,7 @@
             //  TOAST SYSTEM
             // ================================================================
             function showToast(message, type = 'info', duration = 3000) {
-                const icons = {
-                    success: '✅',
-                    error: '❌',
-                    warning: '⚠️',
-                    info: 'ℹ️'
-                };
+                const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
                 const toast = document.createElement('div');
                 toast.className = `toast ${type}`;
                 toast.innerHTML = `
@@ -1023,7 +1008,9 @@
                 return m + ':' + (s < 10 ? '0' : '') + s;
             }
 
-            // ---------- PLAYER ENGINE ----------
+            // ================================================================
+            //  AUDIO ENGINE (FIXED: ป้องกัน GC + Keep-alive)
+            // ================================================================
             class AudioEngine {
                 constructor() {
                     this.main = null;
@@ -1035,6 +1022,9 @@
                     this.positionBeforeInsert = 0;
                     this.mainSrc = null;
                     this._initAudio();
+
+                    // เก็บ reference ใน window เพื่อป้องกัน GC
+                    window.__audioEngine = this;
                 }
 
                 _initAudio() {
@@ -1043,28 +1033,53 @@
                             this.main = new Audio();
                             this.main.preload = 'auto';
                             this.main.volume = this.volume / 100;
+                            this.main.crossOrigin = 'anonymous';
+
+                            // ป้องกันการหยุด
                             this.main.onerror = (e) => {
                                 console.warn('⚠️ Main audio error:', e);
                                 dom.audioStatusBadge.textContent = '⚠️ Audio Error';
                                 dom.audioStatusBadge.style.borderColor = '#ff4444';
                                 showToast('เกิดข้อผิดพลาดในการเล่นเสียง', 'error');
                             };
+
                             this.main.oncanplay = () => {
+                                console.log('✅ Audio ready');
                                 dom.audioStatusBadge.textContent = '🔊 พร้อม';
                                 dom.audioStatusBadge.style.borderColor = 'var(--border-color)';
                             };
+
                             this.main.onended = () => {
-                                console.log('⏹️ Audio ended naturally');
+                                console.log('⏹️ Audio ended');
                             };
+
+                            // เก็บ reference ใน window เพื่อป้องกัน GC
+                            window.__mainAudio = this.main;
                         }
+
                         if (!this.insert) {
                             this.insert = new Audio();
                             this.insert.preload = 'auto';
                             this.insert.volume = 0;
+                            this.insert.crossOrigin = 'anonymous';
                             this.insert.onerror = (e) => {
                                 console.warn('⚠️ Insert audio error:', e);
                                 showToast('เกิดข้อผิดพลาดในการเล่นเสียงแทรก', 'error');
                             };
+                            window.__insertAudio = this.insert;
+                        }
+
+                        // สร้าง AudioContext เพื่อป้องกัน Browser Suspend
+                        if (!state._audioContext) {
+                            try {
+                                state._audioContext = new(window.AudioContext || window.webkitAudioContext)();
+                                if (state._audioContext.state === 'suspended') {
+                                    state._audioContext.resume();
+                                }
+                                window.__audioContext = state._audioContext;
+                            } catch (e) {
+                                console.warn('AudioContext not supported');
+                            }
                         }
                     } catch (e) {
                         console.warn('Audio init error:', e);
@@ -1098,24 +1113,32 @@
                             const main = this.ensureMainAudio();
                             if (!main) return reject('No audio element');
 
+                            // ล้าง src เดิม
                             if (main.src) {
                                 try { URL.revokeObjectURL(main.src); } catch (e) {}
                                 main.src = '';
+                                main.load();
                             }
 
+                            // ลบ event listeners เก่า
                             main.onended = null;
                             main.onerror = null;
                             main.oncanplay = null;
 
                             const blob = musicData instanceof Blob ? musicData : new Blob([musicData]);
                             const url = URL.createObjectURL(blob);
+
+                            // เก็บ url ไว้ใน window เพื่อป้องกัน GC
+                            window.__currentAudioUrl = url;
+
                             main.src = url;
                             main.currentTime = position || 0;
                             this.mainSrc = url;
                             main.volume = this.volume / 100;
 
+                            // ตั้งค่า event listeners ใหม่
                             main.onended = () => {
-                                console.log('⏹️ Audio ended naturally');
+                                console.log('⏹️ Audio ended');
                             };
 
                             main.onerror = (e) => {
@@ -1130,6 +1153,7 @@
                                 dom.audioStatusBadge.style.borderColor = 'var(--border-color)';
                             };
 
+                            // เริ่มเล่น
                             if (autoPlay) {
                                 const playPromise = main.play();
                                 if (playPromise !== undefined) {
@@ -1241,6 +1265,7 @@
 
                             const blob = insertData instanceof Blob ? insertData : new Blob([insertData]);
                             const url = URL.createObjectURL(blob);
+                            window.__currentInsertUrl = url;
                             insert.src = url;
                             insert.volume = 0;
                             this.isInserting = true;
@@ -1363,7 +1388,9 @@
                 }
             }
 
-            // ---------- APP CONTROLLER ----------
+            // ================================================================
+            //  APP CONTROLLER
+            // ================================================================
             const App = {
                 audioEngine: null,
                 initialized: false,
@@ -1380,6 +1407,9 @@
 
                         this.setupUI();
                         this.setupScheduler();
+
+                        // ===== เริ่มระบบป้องกันการหยุด =====
+                        this.preventAudioSleep();
 
                         this.initialized = true;
                         dom.statusBarInfo.textContent = 'พร้อมใช้งาน';
@@ -1399,6 +1429,67 @@
                         dom.statusBarInfo.textContent = 'เกิดข้อผิดพลาด';
                         showToast('เกิดข้อผิดพลาดในการเริ่มต้นระบบ', 'error');
                     }
+                },
+
+                // ===== ระบบป้องกันการหยุดทำงานของ Audio =====
+                preventAudioSleep() {
+                    // 1. สร้าง AudioContext เพื่อป้องกัน Browser Suspend
+                    try {
+                        if (!state._audioContext) {
+                            state._audioContext = new(window.AudioContext || window.webkitAudioContext)();
+                            if (state._audioContext.state === 'suspended') {
+                                state._audioContext.resume();
+                            }
+                            window.__audioContext = state._audioContext;
+                        }
+                        // รีเฟรช AudioContext ทุก 10 วินาที
+                        setInterval(() => {
+                            if (state._audioContext && state._audioContext.state === 'suspended') {
+                                state._audioContext.resume();
+                            }
+                        }, 10000);
+                    } catch (e) {
+                        console.warn('AudioContext not supported');
+                    }
+
+                    // 2. ตรวจสอบและกู้คืนการเล่นทุก 2 วินาที
+                    if (state._keepAliveInterval) {
+                        clearInterval(state._keepAliveInterval);
+                    }
+
+                    state._keepAliveInterval = setInterval(() => {
+                        try {
+                            if (state.player.isPlaying && this.audioEngine && this.audioEngine.main) {
+                                const main = this.audioEngine.main;
+                                // ตรวจสอบว่ามี src และเล่นอยู่หรือไม่
+                                if (main && main.src) {
+                                    if (main.paused && !main.ended) {
+                                        console.warn('🔄 Audio paused, resuming at', main.currentTime);
+                                        main.play().catch(() => {
+                                            // ถ้าเล่นไม่ได้ ให้ reload
+                                            if (state.player.currentMusicId) {
+                                                const music = state.music.find(m => m.id === state.player
+                                                    .currentMusicId);
+                                                if (music) {
+                                                    this.playMusicById(music.id, main.currentTime || 0);
+                                                }
+                                            }
+                                        });
+                                        dom.audioStatusBadge.textContent = '🔄 กู้คืน...';
+                                    } else if (main.ended) {
+                                        // ถ้าจบแล้ว ให้ไปต่อ
+                                        this.onSongEnd();
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            // Silent
+                        }
+                    }, 2000); // ทุก 2 วินาที
+
+                    // 3. เก็บ reference ใน window เพื่อป้องกัน GC
+                    window.__app = this;
+                    window.__keepAlive = state._keepAliveInterval;
                 },
 
                 async loadAllData() {
@@ -1792,7 +1883,6 @@
                         name = prompt('ชื่อ Playlist:');
                         if (!name) return;
                     }
-                    // Check duplicate
                     if (state.playlists.find(p => p.name === name)) {
                         showToast('มี Playlist ชื่อนี้แล้ว', 'warning');
                         return;
@@ -1938,7 +2028,7 @@
                         csv +=
                             `${new Date(h.timestamp).toLocaleString('th-TH')},${h.type},${h.itemName},${formatTime(h.duration)}\n`;
                     }
-                    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }); // Add BOM for Thai
+                    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
                     const link = document.createElement('a');
                     link.href = URL.createObjectURL(blob);
                     link.download = `history_${new Date().toISOString().slice(0,10)}.csv`;
@@ -1947,7 +2037,9 @@
                     showToast('Export CSV สำเร็จ', 'success');
                 },
 
-                // ---------- PLAYBACK ----------
+                // ============================================================
+                //  PLAYBACK (FIXED: ป้องกันการหยุด)
+                // ============================================================
                 async playMusicById(id, position = 0) {
                     const music = state.music.find(m => m.id === id);
                     if (!music) {
@@ -1970,6 +2062,7 @@
                         state.player.currentPosition = position || 0;
                         state.player.isPlaying = true;
 
+                        // รอให้ metadata โหลด
                         await new Promise((resolve) => {
                             const checkDuration = () => {
                                 const dur = this.audioEngine.getDuration();
@@ -1986,20 +2079,32 @@
 
                         this.startProgressTracking();
 
+                        // ล้าง play check เก่า
                         if (state.player._playCheck) {
                             clearInterval(state.player._playCheck);
                             state.player._playCheck = null;
                         }
 
+                        // ตรวจสอบการหยุดทุก 1 วินาที
                         state.player._playCheck = setInterval(() => {
                             if (state.player.isPlaying && this.audioEngine && this.audioEngine.main) {
-                                if (this.audioEngine.main.paused && this.audioEngine.main.src) {
-                                    console.warn('⚠️ Audio paused unexpectedly, resuming...');
-                                    this.audioEngine.main.play().catch(() => {});
+                                const main = this.audioEngine.main;
+                                if (main.paused && main.src && !main.ended) {
+                                    console.warn('⚠️ Audio paused, resuming...');
+                                    main.play().catch(() => {
+                                        // ถ้าเล่นไม่ได้ ให้ reload
+                                        if (state.player.currentMusicId) {
+                                            const m = state.music.find(m => m.id === state.player
+                                                .currentMusicId);
+                                            if (m) {
+                                                this.playMusicById(m.id, main.currentTime || 0);
+                                            }
+                                        }
+                                    });
                                     dom.audioStatusBadge.textContent = '🔄 กู้คืน...';
                                 }
                             }
-                        }, 2000);
+                        }, 1000);
 
                         this.updatePlayerUI();
                         await this.savePlayerState();
@@ -2025,7 +2130,8 @@
                     state.player.timer = setInterval(() => {
                         if (this.audioEngine && this.audioEngine.main) {
                             try {
-                                if (!this.audioEngine.main.src || this.audioEngine.main.src === '') {
+                                const main = this.audioEngine.main;
+                                if (!main || !main.src || main.src === '') {
                                     return;
                                 }
 
@@ -2042,7 +2148,7 @@
                                     this.onSongEnd();
                                 }
                             } catch (e) {
-                                // Silent fail
+                                // Silent
                             }
                         }
                     }, 300);
@@ -2561,6 +2667,9 @@
                         if (state.player.timer) {
                             clearInterval(state.player.timer);
                         }
+                        if (state._keepAliveInterval) {
+                            clearInterval(state._keepAliveInterval);
+                        }
                         this.savePlayerState();
                     });
 
@@ -2578,10 +2687,8 @@
                     this.updatePlayerUI();
                     this.registerManifest();
 
-                    // Check if PWA can be installed
                     window.addEventListener('beforeinstallprompt', (e) => {
                         e.preventDefault();
-                        // Can show install button here
                         console.log('📱 PWA can be installed');
                     });
                 },
