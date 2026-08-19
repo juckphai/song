@@ -1,0 +1,2444 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#1a1a2e" />
+    <title>Offline Audio Player PWA</title>
+
+    <!-- PWA Manifest (inline) -->
+    <link rel="manifest" id="manifest-link" />
+
+    <!-- Font & Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+
+    <style>
+        /* ===== CSS Variables / Theme ===== */
+        :root {
+            --bg-primary: #0f0e17;
+            --bg-secondary: #1a1a2e;
+            --bg-card: #16213e;
+            --bg-input: #1a1a2e;
+            --text-primary: #fffffe;
+            --text-secondary: #a7a9be;
+            --accent: #ff8906;
+            --accent-hover: #e07c00;
+            --accent-dim: rgba(255, 137, 6, 0.15);
+            --border-color: #2a2a4a;
+            --shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            --radius: 16px;
+            --radius-sm: 10px;
+            --transition: 0.25s ease;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            padding: 12px;
+        }
+
+        /* ===== App Container ===== */
+        #app {
+            max-width: 480px;
+            width: 100%;
+            background: var(--bg-secondary);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 16px 16px 24px;
+            position: relative;
+            overflow: hidden;
+            min-height: 95vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ===== Scrollbar ===== */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--accent);
+            border-radius: 10px;
+        }
+
+        /* ===== Typography ===== */
+        h1,
+        h2,
+        h3 {
+            font-weight: 600;
+            letter-spacing: 0.3px;
+        }
+        h1 {
+            font-size: 1.6rem;
+        }
+        h2 {
+            font-size: 1.2rem;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+        h3 {
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        /* ===== Tabs ===== */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            background: var(--bg-card);
+            border-radius: var(--radius-sm);
+            padding: 4px;
+            margin-bottom: 18px;
+            flex-shrink: 0;
+            overflow-x: auto;
+        }
+        .tab-btn {
+            flex: 1;
+            min-width: 60px;
+            padding: 10px 4px;
+            background: transparent;
+            border: none;
+            border-radius: var(--radius-sm);
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 0.78rem;
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+        }
+        .tab-btn i {
+            font-size: 1.1rem;
+        }
+        .tab-btn.active {
+            background: var(--accent);
+            color: #0f0e17;
+        }
+        .tab-btn:not(.active):hover {
+            background: rgba(255, 137, 6, 0.08);
+            color: var(--text-primary);
+        }
+
+        /* ===== Panels ===== */
+        .panel {
+            display: none;
+            flex-direction: column;
+            flex: 1;
+            gap: 16px;
+            overflow-y: auto;
+            padding-bottom: 8px;
+        }
+        .panel.active {
+            display: flex;
+        }
+
+        /* ===== Cards ===== */
+        .card {
+            background: var(--bg-card);
+            border-radius: var(--radius-sm);
+            padding: 14px 16px;
+            border: 1px solid var(--border-color);
+            transition: var(--transition);
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .card-title {
+            font-weight: 600;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* ===== Player ===== */
+        .player-cover {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 0 4px;
+        }
+        .player-cover .track-name {
+            font-size: 1.2rem;
+            font-weight: 600;
+            text-align: center;
+            min-height: 2.4rem;
+        }
+        .player-cover .track-sub {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+        .player-progress {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+        .player-progress input[type="range"] {
+            flex: 1;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 4px;
+            border-radius: 4px;
+            background: var(--border-color);
+            outline: none;
+            transition: var(--transition);
+        }
+        .player-progress input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+        }
+        .player-controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 18px;
+            padding: 8px 0;
+        }
+        .player-controls button {
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-size: 1.4rem;
+            cursor: pointer;
+            transition: var(--transition);
+            padding: 6px;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .player-controls button:hover {
+            background: var(--accent-dim);
+            color: var(--accent);
+        }
+        .player-controls .play-btn {
+            background: var(--accent);
+            color: #0f0e17;
+            font-size: 1.6rem;
+        }
+        .player-controls .play-btn:hover {
+            background: var(--accent-hover);
+            color: #0f0e17;
+        }
+        .player-volume {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 4px 0;
+        }
+        .player-volume input[type="range"] {
+            flex: 1;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 4px;
+            border-radius: 4px;
+            background: var(--border-color);
+            outline: none;
+        }
+        .player-volume input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+        }
+
+        /* ===== Lists ===== */
+        .item-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 260px;
+            overflow-y: auto;
+        }
+        .item-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: var(--bg-primary);
+            border-radius: var(--radius-sm);
+            border-left: 3px solid transparent;
+            transition: var(--transition);
+            cursor: default;
+        }
+        .item-row:hover {
+            border-left-color: var(--accent);
+            background: rgba(255, 137, 6, 0.04);
+        }
+        .item-row .info {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            overflow: hidden;
+        }
+        .item-row .info .name {
+            font-weight: 500;
+            font-size: 0.9rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .item-row .info .meta {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+        .item-row .actions {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+        .item-row .actions button {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 4px 6px;
+            border-radius: 6px;
+            transition: var(--transition);
+            font-size: 0.85rem;
+        }
+        .item-row .actions button:hover {
+            color: var(--accent);
+            background: var(--accent-dim);
+        }
+        .item-row .actions .play-action {
+            color: var(--accent);
+        }
+
+        /* ===== Upload area ===== */
+        .upload-area {
+            border: 2px dashed var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 20px 12px;
+            text-align: center;
+            color: var(--text-secondary);
+            transition: var(--transition);
+            cursor: pointer;
+            position: relative;
+        }
+        .upload-area:hover {
+            border-color: var(--accent);
+            background: var(--accent-dim);
+        }
+        .upload-area input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+        .upload-area i {
+            font-size: 2rem;
+            display: block;
+            margin-bottom: 6px;
+            color: var(--accent);
+        }
+
+        /* ===== Scheduler ===== */
+        .schedule-item {
+            background: var(--bg-primary);
+            border-radius: var(--radius-sm);
+            padding: 10px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 3px solid var(--accent);
+        }
+        .schedule-item .info .name {
+            font-weight: 500;
+        }
+        .schedule-item .info .desc {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+        .schedule-item .toggle {
+            width: 40px;
+            height: 22px;
+            background: var(--border-color);
+            border-radius: 30px;
+            position: relative;
+            cursor: pointer;
+            transition: var(--transition);
+            flex-shrink: 0;
+        }
+        .schedule-item .toggle.active {
+            background: var(--accent);
+        }
+        .schedule-item .toggle::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 18px;
+            height: 18px;
+            background: #fff;
+            border-radius: 50%;
+            transition: var(--transition);
+        }
+        .schedule-item .toggle.active::after {
+            left: 20px;
+        }
+
+        /* ===== Status bar ===== */
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            padding: 6px 4px 0;
+            border-top: 1px solid var(--border-color);
+            margin-top: auto;
+            flex-shrink: 0;
+        }
+        .status-bar .badge {
+            background: var(--accent-dim);
+            color: var(--accent);
+            padding: 2px 10px;
+            border-radius: 30px;
+            font-weight: 600;
+        }
+
+        /* ===== Utilities ===== */
+        .flex-between {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .gap-2 {
+            gap: 8px;
+        }
+        .mt-2 {
+            margin-top: 12px;
+        }
+        .text-center {
+            text-align: center;
+        }
+        .text-muted {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+        }
+        .w-full {
+            width: 100%;
+        }
+        .btn-sm {
+            background: var(--accent);
+            color: #0f0e17;
+            border: none;
+            padding: 4px 12px;
+            border-radius: 30px;
+            font-weight: 600;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        .btn-sm:hover {
+            background: var(--accent-hover);
+        }
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 4px 12px;
+            border-radius: 30px;
+            font-weight: 500;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        .btn-outline:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+        .btn-outline.active {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: var(--accent-dim);
+        }
+
+        /* ===== Responsive ===== */
+        @media (max-width: 420px) {
+            #app {
+                padding: 12px 10px 16px;
+                min-height: 90vh;
+            }
+            .tab-btn {
+                font-size: 0.65rem;
+                padding: 8px 2px;
+            }
+            .tab-btn i {
+                font-size: 0.95rem;
+            }
+            .player-controls button {
+                width: 40px;
+                height: 40px;
+                font-size: 1.2rem;
+            }
+        }
+
+        /* ===== empty state ===== */
+        .empty-state {
+            color: var(--text-secondary);
+            text-align: center;
+            padding: 20px 0;
+            font-size: 0.9rem;
+        }
+        .empty-state i {
+            font-size: 2.4rem;
+            display: block;
+            margin-bottom: 8px;
+            opacity: 0.4;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app">
+        <!-- ===== TABS ===== -->
+        <div class="tabs" id="tabs">
+            <button class="tab-btn active" data-tab="tab-player"><i class="fas fa-play"></i><span>เล่น</span></button>
+            <button class="tab-btn" data-tab="tab-music"><i class="fas fa-music"></i><span>เพลง</span></button>
+            <button class="tab-btn" data-tab="tab-insert"><i class="fas fa-microphone"></i><span>แทรก</span></button>
+            <button class="tab-btn" data-tab="tab-schedule"><i class="fas fa-clock"></i><span>ตาราง</span></button>
+            <button class="tab-btn" data-tab="tab-history"><i class="fas fa-history"></i><span>ประวัติ</span></button>
+        </div>
+
+        <!-- ===== PANEL: PLAYER ===== -->
+        <div class="panel active" id="tab-player">
+            <div class="card" style="flex:1;">
+                <div class="player-cover">
+                    <div class="track-name" id="currentTrackName">ไม่มีเพลง</div>
+                    <div class="track-sub" id="currentTrackSub">หยุดอยู่</div>
+                </div>
+                <div class="player-progress">
+                    <span id="currentTime">0:00</span>
+                    <input type="range" id="progressSlider" min="0" max="100" value="0" />
+                    <span id="durationTime">0:00</span>
+                </div>
+                <div class="player-controls">
+                    <button id="shuffleBtn" title="สุ่ม"><i class="fas fa-random"></i></button>
+                    <button id="prevBtn"><i class="fas fa-step-backward"></i></button>
+                    <button class="play-btn" id="playBtn"><i class="fas fa-play"></i></button>
+                    <button id="nextBtn"><i class="fas fa-step-forward"></i></button>
+                    <button id="repeatBtn" title="ทำซ้ำ"><i class="fas fa-redo"></i></button>
+                </div>
+                <div class="player-volume">
+                    <i class="fas fa-volume-down" style="color:var(--text-secondary);"></i>
+                    <input type="range" id="volumeSlider" min="0" max="100" value="80" />
+                    <i class="fas fa-volume-up" style="color:var(--text-secondary);"></i>
+                </div>
+                <div style="display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; justify-content:center;">
+                    <span class="badge" id="playlistBadge">ไม่มี Playlist</span>
+                    <span class="badge" id="statusBadge">⏸ หยุด</span>
+                    <span class="badge" id="audioStatusBadge" style="background:transparent; border:1px solid var(--border-color);">🔊 พร้อม</span>
+                </div>
+            </div>
+            <!-- Quick playlist selector -->
+            <div class="card">
+                <div class="flex-between">
+                    <span class="card-title">Playlist</span>
+                    <div style="display:flex; gap:6px;">
+                        <button class="btn-sm" id="newPlaylistBtn"><i class="fas fa-plus"></i> ใหม่</button>
+                    </div>
+                </div>
+                <div class="item-list" id="playlistList"></div>
+            </div>
+        </div>
+
+        <!-- ===== PANEL: MUSIC ===== -->
+        <div class="panel" id="tab-music">
+            <div class="card">
+                <div class="flex-between">
+                    <span class="card-title">คลังเพลง</span>
+                    <button class="btn-sm" id="addMusicBtn"><i class="fas fa-upload"></i> เพิ่ม MP3</button>
+                </div>
+                <div class="upload-area" id="musicUploadArea">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <span>เลือกไฟล์ MP3 หรือลากมาวาง</span>
+                    <input type="file" id="musicFileInput" accept=".mp3,audio/mpeg" multiple />
+                </div>
+                <div class="item-list" id="musicList" style="margin-top:10px;"></div>
+            </div>
+        </div>
+
+        <!-- ===== PANEL: INSERT ===== -->
+        <div class="panel" id="tab-insert">
+            <div class="card">
+                <div class="flex-between">
+                    <span class="card-title">เสียงแทรก</span>
+                    <button class="btn-sm" id="addInsertBtn"><i class="fas fa-upload"></i> เพิ่ม</button>
+                </div>
+                <div class="upload-area" id="insertUploadArea">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <span>เลือกไฟล์เสียงแทรก (MP3)</span>
+                    <input type="file" id="insertFileInput" accept=".mp3,audio/mpeg" multiple />
+                </div>
+                <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
+                    <button class="btn-outline insert-group-filter active" data-group="all">ทั้งหมด</button>
+                    <button class="btn-outline insert-group-filter" data-group="ประกาศ">ประกาศ</button>
+                    <button class="btn-outline insert-group-filter" data-group="ประชาสัมพันธ์">ประชาสัมพันธ์</button>
+                    <button class="btn-outline insert-group-filter" data-group="โฆษณา">โฆษณา</button>
+                </div>
+                <div class="item-list" id="insertList" style="margin-top:10px;"></div>
+            </div>
+        </div>
+
+        <!-- ===== PANEL: SCHEDULE ===== -->
+        <div class="panel" id="tab-schedule">
+            <div class="card">
+                <div class="flex-between">
+                    <span class="card-title">ตารางการทำงาน</span>
+                    <button class="btn-sm" id="addScheduleBtn"><i class="fas fa-plus"></i> เพิ่ม</button>
+                </div>
+                <div id="scheduleList"></div>
+                <div class="empty-state" id="scheduleEmpty">
+                    <i class="fas fa-calendar-plus"></i>
+                    ยังไม่มีตารางเวลา
+                </div>
+            </div>
+            <div class="card">
+                <div class="flex-between">
+                    <span class="card-title">ระบบอัตโนมัติ</span>
+                    <div class="toggle active" id="autoToggle" style="width:44px; height:24px;">
+                        <span style="position:absolute; left:6px; top:4px; font-size:0.6rem; font-weight:bold; color:#0f0e17;">ON</span>
+                        <span style="position:absolute; right:4px; top:4px; font-size:0.6rem; font-weight:bold; color:var(--text-secondary);">OFF</span>
+                    </div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px;">
+                    <div>
+                        <label style="font-size:0.75rem; color:var(--text-secondary);">เริ่ม</label>
+                        <input type="time" id="autoStartTime" value="07:00" style="width:100%; background:var(--bg-primary); border:1px solid var(--border-color); border-radius:6px; padding:6px; color:var(--text-primary);" />
+                    </div>
+                    <div>
+                        <label style="font-size:0.75rem; color:var(--text-secondary);">หยุด</label>
+                        <input type="time" id="autoEndTime" value="16:30" style="width:100%; background:var(--bg-primary); border:1px solid var(--border-color); border-radius:6px; padding:6px; color:var(--text-primary);" />
+                    </div>
+                </div>
+                <div style="margin-top:8px; display:flex; gap:4px; flex-wrap:wrap;">
+                    <span class="badge" style="background:var(--accent-dim); color:var(--accent);">จันทร์</span>
+                    <span class="badge" style="background:var(--accent-dim); color:var(--accent);">อังคาร</span>
+                    <span class="badge" style="background:var(--accent-dim); color:var(--accent);">พุธ</span>
+                    <span class="badge" style="background:var(--accent-dim); color:var(--accent);">พฤหัส</span>
+                    <span class="badge" style="background:var(--accent-dim); color:var(--accent);">ศุกร์</span>
+                    <span class="badge" style="background:transparent; border:1px solid var(--border-color); color:var(--text-secondary);">เสาร์</span>
+                    <span class="badge" style="background:transparent; border:1px solid var(--border-color); color:var(--text-secondary);">อาทิตย์</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== PANEL: HISTORY ===== -->
+        <div class="panel" id="tab-history">
+            <div class="card">
+                <div class="flex-between">
+                    <span class="card-title">ประวัติการทำงาน</span>
+                    <button class="btn-sm" id="exportCsvBtn"><i class="fas fa-file-csv"></i> Export CSV</button>
+                </div>
+                <div class="item-list" id="historyList" style="max-height:300px;"></div>
+                <div class="empty-state" id="historyEmpty">
+                    <i class="fas fa-history"></i>
+                    ยังไม่มีประวัติ
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== STATUS BAR ===== -->
+        <div class="status-bar">
+            <span>⚡ Offline</span>
+            <span id="statusBarInfo">พร้อมใช้งาน</span>
+            <span id="dbStatus">📦 DB: พร้อม</span>
+        </div>
+    </div>
+
+    <script>
+        // ================================================================
+        //  OFFLINE AUDIO PLAYER PWA — SINGLE FILE APPLICATION
+        //  Architecture: IndexedDB + Audio Engine + Scheduler (conceptual)
+        //  Follows the Offline-first principle from 0111.txt
+        //  FIXED: Audio playback stability issue
+        // ================================================================
+
+        (function() {
+            'use strict';
+
+            // ---------- CONSTANTS ----------
+            const DB_NAME = 'OfflineAudioDB';
+            const DB_VERSION = 1;
+            const STORES = {
+                music: 'music',
+                insert: 'insertAudio',
+                playlist: 'playlist',
+                schedule: 'schedule',
+                settings: 'settings',
+                history: 'history',
+                playerState: 'playerState'
+            };
+
+            // ---------- STATE ----------
+            const state = {
+                db: null,
+                music: [],
+                inserts: [],
+                playlists: [],
+                schedules: [],
+                history: [],
+                settings: {
+                    autoStart: true,
+                    startTime: '07:00',
+                    endTime: '16:30',
+                    activeDays: ['mon', 'tue', 'wed', 'thu', 'fri'],
+                    volume: 80,
+                    fade: 1,
+                    volumeReduction: 20
+                },
+                player: {
+                    currentMusicId: null,
+                    currentPosition: 0,
+                    volume: 80,
+                    playlistId: null,
+                    playlistIndex: 0,
+                    isPlaying: false,
+                    shuffle: false,
+                    repeat: 'none',
+                    isInserting: false,
+                    currentInsertId: null,
+                    duration: 0,
+                    currentTime: 0,
+                    audio: null,
+                    insertAudio: null,
+                    timer: null,
+                    insertTimer: null,
+                    schedulerInterval: null,
+                    _playCheck: null, // for monitoring
+                    _loadRetryCount: 0
+                },
+                currentGroupFilter: 'all',
+                isAutoOn: true,
+                scheduleIntervalCheck: null
+            };
+
+            // ---------- DOM REFS ----------
+            const $ = (sel) => document.querySelector(sel);
+            const $$ = (sel) => document.querySelectorAll(sel);
+
+            const dom = {
+                tabs: $$('.tab-btn'),
+                panels: $$('.panel'),
+                // Player
+                playBtn: $('#playBtn'),
+                prevBtn: $('#prevBtn'),
+                nextBtn: $('#nextBtn'),
+                shuffleBtn: $('#shuffleBtn'),
+                repeatBtn: $('#repeatBtn'),
+                progressSlider: $('#progressSlider'),
+                volumeSlider: $('#volumeSlider'),
+                currentTime: $('#currentTime'),
+                durationTime: $('#durationTime'),
+                currentTrackName: $('#currentTrackName'),
+                currentTrackSub: $('#currentTrackSub'),
+                playlistBadge: $('#playlistBadge'),
+                statusBadge: $('#statusBadge'),
+                audioStatusBadge: $('#audioStatusBadge'),
+                // Music
+                musicList: $('#musicList'),
+                musicFileInput: $('#musicFileInput'),
+                musicUploadArea: $('#musicUploadArea'),
+                addMusicBtn: $('#addMusicBtn'),
+                // Insert
+                insertList: $('#insertList'),
+                insertFileInput: $('#insertFileInput'),
+                insertUploadArea: $('#insertUploadArea'),
+                addInsertBtn: $('#addInsertBtn'),
+                insertGroupFilters: $$('.insert-group-filter'),
+                // Playlist
+                playlistList: $('#playlistList'),
+                newPlaylistBtn: $('#newPlaylistBtn'),
+                // Schedule
+                scheduleList: $('#scheduleList'),
+                scheduleEmpty: $('#scheduleEmpty'),
+                addScheduleBtn: $('#addScheduleBtn'),
+                autoToggle: $('#autoToggle'),
+                autoStartTime: $('#autoStartTime'),
+                autoEndTime: $('#autoEndTime'),
+                // History
+                historyList: $('#historyList'),
+                historyEmpty: $('#historyEmpty'),
+                exportCsvBtn: $('#exportCsvBtn'),
+                // Status
+                dbStatus: $('#dbStatus'),
+                statusBarInfo: $('#statusBarInfo')
+            };
+
+            // ---------- INDEXEDDB HELPERS ----------
+            function openDB() {
+                return new Promise((resolve, reject) => {
+                    const req = indexedDB.open(DB_NAME, DB_VERSION);
+                    req.onupgradeneeded = (ev) => {
+                        const db = ev.target.result;
+                        if (!db.objectStoreNames.contains(STORES.music)) {
+                            db.createObjectStore(STORES.music, { keyPath: 'id' });
+                        }
+                        if (!db.objectStoreNames.contains(STORES.insert)) {
+                            db.createObjectStore(STORES.insert, { keyPath: 'id' });
+                        }
+                        if (!db.objectStoreNames.contains(STORES.playlist)) {
+                            db.createObjectStore(STORES.playlist, { keyPath: 'id' });
+                        }
+                        if (!db.objectStoreNames.contains(STORES.schedule)) {
+                            db.createObjectStore(STORES.schedule, { keyPath: 'id' });
+                        }
+                        if (!db.objectStoreNames.contains(STORES.settings)) {
+                            db.createObjectStore(STORES.settings, { keyPath: 'id' });
+                        }
+                        if (!db.objectStoreNames.contains(STORES.history)) {
+                            db.createObjectStore(STORES.history, { keyPath: 'id' });
+                        }
+                        if (!db.objectStoreNames.contains(STORES.playerState)) {
+                            db.createObjectStore(STORES.playerState, { keyPath: 'id' });
+                        }
+                    };
+                    req.onsuccess = (ev) => resolve(ev.target.result);
+                    req.onerror = (ev) => reject(ev.target.error);
+                });
+            }
+
+            function dbGetAll(store) {
+                return new Promise((resolve, reject) => {
+                    const tx = state.db.transaction(store, 'readonly');
+                    const req = tx.objectStore(store).getAll();
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+            }
+
+            function dbPut(store, data) {
+                return new Promise((resolve, reject) => {
+                    const tx = state.db.transaction(store, 'readwrite');
+                    const req = tx.objectStore(store).put(data);
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+            }
+
+            function dbDelete(store, id) {
+                return new Promise((resolve, reject) => {
+                    const tx = state.db.transaction(store, 'readwrite');
+                    const req = tx.objectStore(store).delete(id);
+                    req.onsuccess = () => resolve();
+                    req.onerror = () => reject(req.error);
+                });
+            }
+
+            function dbGet(store, id) {
+                return new Promise((resolve, reject) => {
+                    const tx = state.db.transaction(store, 'readonly');
+                    const req = tx.objectStore(store).get(id);
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+            }
+
+            // ---------- ID GENERATOR ----------
+            function genId() {
+                return Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 6);
+            }
+
+            function formatTime(sec) {
+                if (!sec || isNaN(sec) || sec === Infinity) return '0:00';
+                const m = Math.floor(sec / 60);
+                const s = Math.floor(sec % 60);
+                return m + ':' + (s < 10 ? '0' : '') + s;
+            }
+
+            // ---------- PLAYER ENGINE (FIXED) ----------
+            class AudioEngine {
+                constructor() {
+                    this.main = null;
+                    this.insert = null;
+                    this.isInserting = false;
+                    this.volume = 80;
+                    this.fadeDuration = 1;
+                    this.volumeReduction = 20;
+                    this.positionBeforeInsert = 0;
+                    this.mainSrc = null;
+                    this._initAudio();
+                }
+
+                _initAudio() {
+                    try {
+                        if (!this.main) {
+                            this.main = new Audio();
+                            this.main.preload = 'auto';
+                            this.main.volume = this.volume / 100;
+                            // Monitor for errors
+                            this.main.onerror = (e) => {
+                                console.warn('⚠️ Main audio error:', e);
+                                dom.audioStatusBadge.textContent = '⚠️ Audio Error';
+                                dom.audioStatusBadge.style.borderColor = '#ff4444';
+                            };
+                            this.main.oncanplay = () => {
+                                dom.audioStatusBadge.textContent = '🔊 พร้อม';
+                                dom.audioStatusBadge.style.borderColor = 'var(--border-color)';
+                            };
+                        }
+                        if (!this.insert) {
+                            this.insert = new Audio();
+                            this.insert.preload = 'auto';
+                            this.insert.volume = 0;
+                            this.insert.onerror = (e) => {
+                                console.warn('⚠️ Insert audio error:', e);
+                            };
+                        }
+                    } catch (e) {
+                        console.warn('Audio init error:', e);
+                    }
+                }
+
+                ensureMainAudio() {
+                    if (!this.main) {
+                        this._initAudio();
+                    }
+                    return this.main;
+                }
+
+                ensureInsertAudio() {
+                    if (!this.insert) {
+                        this._initAudio();
+                    }
+                    return this.insert;
+                }
+
+                setVolume(vol) {
+                    this.volume = Math.min(100, Math.max(0, vol));
+                    if (this.main) {
+                        this.main.volume = this.volume / 100;
+                    }
+                }
+
+                playMusic(musicId, musicData, position = 0, autoPlay = true) {
+                    return new Promise((resolve, reject) => {
+                        try {
+                            const main = this.ensureMainAudio();
+                            if (!main) return reject('No audio element');
+
+                            // Clean up old src
+                            if (main.src) {
+                                try { URL.revokeObjectURL(main.src); } catch (e) {}
+                                main.src = '';
+                            }
+
+                            // Remove old event listeners to prevent duplicates
+                            main.onended = null;
+                            main.onerror = null;
+                            main.oncanplay = null;
+
+                            const blob = musicData instanceof Blob ? musicData : new Blob([musicData]);
+                            const url = URL.createObjectURL(blob);
+                            main.src = url;
+                            main.currentTime = position || 0;
+                            this.mainSrc = url;
+                            main.volume = this.volume / 100;
+
+                            // Set up event listeners
+                            main.onended = () => {
+                                console.log('⏹️ Audio ended naturally');
+                                // Handle in parent
+                            };
+
+                            main.onerror = (e) => {
+                                console.error('❌ Audio error:', e);
+                                dom.audioStatusBadge.textContent = '⚠️ Error';
+                                reject(e);
+                            };
+
+                            main.oncanplay = () => {
+                                dom.audioStatusBadge.textContent = '🔊 พร้อม';
+                                dom.audioStatusBadge.style.borderColor = 'var(--border-color)';
+                            };
+
+                            if (autoPlay) {
+                                const playPromise = main.play();
+                                if (playPromise !== undefined) {
+                                    playPromise.then(() => {
+                                        console.log('▶️ Playing started');
+                                        dom.audioStatusBadge.textContent = '🔊 เล่นอยู่';
+                                        resolve();
+                                    }).catch((err) => {
+                                        console.warn('⚠️ Autoplay blocked:', err);
+                                        dom.audioStatusBadge.textContent = '⏸ รอคลิก';
+                                        // Still resolve - user can click play
+                                        resolve();
+                                    });
+                                } else {
+                                    resolve();
+                                }
+                            } else {
+                                resolve();
+                            }
+                        } catch (e) {
+                            reject(e);
+                        }
+                    });
+                }
+
+                pauseMusic() {
+                    if (this.main) {
+                        try {
+                            this.main.pause();
+                            const pos = this.main.currentTime || 0;
+                            dom.audioStatusBadge.textContent = '⏸ หยุด';
+                            return pos;
+                        } catch (e) {
+                            return 0;
+                        }
+                    }
+                    return 0;
+                }
+
+                resumeMusic() {
+                    const main = this.ensureMainAudio();
+                    if (main && main.src) {
+                        dom.audioStatusBadge.textContent = '🔊 กำลังเล่น...';
+                        return main.play().then(() => {
+                            dom.audioStatusBadge.textContent = '🔊 เล่นอยู่';
+                            return true;
+                        }).catch((err) => {
+                            console.warn('Resume failed:', err);
+                            dom.audioStatusBadge.textContent = '⏸ หยุด';
+                            return false;
+                        });
+                    }
+                    return Promise.resolve(false);
+                }
+
+                getCurrentTime() {
+                    return this.main ? this.main.currentTime || 0 : 0;
+                }
+
+                getDuration() {
+                    return this.main ? this.main.duration || 0 : 0;
+                }
+
+                isPaused() {
+                    return this.main ? this.main.paused : true;
+                }
+
+                setPosition(pos) {
+                    if (this.main && this.main.duration) {
+                        const target = Math.min(Math.max(0, pos), this.main.duration);
+                        this.main.currentTime = target;
+                        return target;
+                    }
+                    return 0;
+                }
+
+                // ---------- INSERT ----------
+                playInsert(insertData, options = {}) {
+                    return new Promise((resolve, reject) => {
+                        try {
+                            const insert = this.ensureInsertAudio();
+                            if (!insert) return reject('No insert audio');
+
+                            const {
+                                fadeIn = 0.5,
+                                    volume = 80,
+                                    reduceMain = true,
+                                    mainVolumeReduction = 20,
+                                    stopMain = false
+                            } = options;
+
+                            // Stop any current insert
+                            this.stopInsert(true);
+
+                            // Save main position if needed
+                            if (this.main && !this.main.paused && !stopMain) {
+                                this.positionBeforeInsert = this.main.currentTime || 0;
+                                if (reduceMain) {
+                                    const targetVol = (this.volume - mainVolumeReduction) / 100;
+                                    this.fadeMainVolume(targetVol, fadeIn);
+                                } else if (stopMain) {
+                                    this.main.pause();
+                                }
+                            } else if (stopMain && this.main) {
+                                this.main.pause();
+                            }
+
+                            // Clean up old src
+                            if (insert.src) {
+                                try { URL.revokeObjectURL(insert.src); } catch (e) {}
+                                insert.src = '';
+                            }
+
+                            const blob = insertData instanceof Blob ? insertData : new Blob([insertData]);
+                            const url = URL.createObjectURL(blob);
+                            insert.src = url;
+                            insert.volume = 0;
+                            this.isInserting = true;
+
+                            insert.onended = () => {
+                                this.stopInsert(false);
+                                resolve();
+                            };
+                            insert.onerror = (e) => {
+                                this.stopInsert(false);
+                                reject(e);
+                            };
+
+                            insert.play().then(() => {
+                                this.fadeInsertVolume(volume / 100, fadeIn);
+                            }).catch((e) => {
+                                this.isInserting = false;
+                                reject(e);
+                            });
+                        } catch (e) {
+                            this.isInserting = false;
+                            reject(e);
+                        }
+                    });
+                }
+
+                stopInsert(silent = false) {
+                    if (this.insert) {
+                        try {
+                            this.insert.pause();
+                            this.insert.currentTime = 0;
+                            if (this.insert.src) {
+                                try { URL.revokeObjectURL(this.insert.src); } catch (e) {}
+                                this.insert.src = '';
+                            }
+                        } catch (e) {}
+                        this.isInserting = false;
+                    }
+                    // Restore main volume
+                    if (!silent && this.main) {
+                        this.fadeMainVolume(this.volume / 100, 0.3);
+                        if (this.main.paused && this.main.src) {
+                            this.main.play().catch(() => {});
+                        }
+                        if (this.positionBeforeInsert > 0 && this.main.src) {
+                            try {
+                                this.main.currentTime = this.positionBeforeInsert;
+                            } catch (e) {}
+                            this.positionBeforeInsert = 0;
+                        }
+                    }
+                    return true;
+                }
+
+                fadeMainVolume(target, duration) {
+                    if (!this.main) return;
+                    try {
+                        const start = this.main.volume;
+                        const diff = target - start;
+                        const steps = 20;
+                        const stepTime = (duration * 1000) / steps;
+                        let currentStep = 0;
+                        const interval = setInterval(() => {
+                            currentStep++;
+                            const progress = Math.min(1, currentStep / steps);
+                            this.main.volume = Math.max(0, Math.min(1, start + diff * progress));
+                            if (currentStep >= steps) {
+                                clearInterval(interval);
+                                this.main.volume = Math.max(0, Math.min(1, target));
+                            }
+                        }, stepTime);
+                    } catch (e) {
+                        // Fallback
+                        if (this.main) this.main.volume = Math.max(0, Math.min(1, target));
+                    }
+                }
+
+                fadeInsertVolume(target, duration) {
+                    if (!this.insert) return;
+                    try {
+                        const start = 0;
+                        const diff = target - start;
+                        const steps = 20;
+                        const stepTime = (duration * 1000) / steps;
+                        let currentStep = 0;
+                        const interval = setInterval(() => {
+                            currentStep++;
+                            const progress = Math.min(1, currentStep / steps);
+                            this.insert.volume = Math.max(0, Math.min(1, start + diff * progress));
+                            if (currentStep >= steps) {
+                                clearInterval(interval);
+                                this.insert.volume = Math.max(0, Math.min(1, target));
+                            }
+                        }, stepTime);
+                    } catch (e) {
+                        if (this.insert) this.insert.volume = Math.max(0, Math.min(1, target));
+                    }
+                }
+
+                isInsertingNow() {
+                    return this.isInserting;
+                }
+
+                destroy() {
+                    if (this.main) {
+                        try {
+                            this.main.pause();
+                            if (this.main.src) { try { URL.revokeObjectURL(this.main.src); } catch (e) {} }
+                            this.main.src = '';
+                        } catch (e) {}
+                        this.main = null;
+                    }
+                    if (this.insert) {
+                        try {
+                            this.insert.pause();
+                            if (this.insert.src) { try { URL.revokeObjectURL(this.insert.src); } catch (e) {} }
+                            this.insert.src = '';
+                        } catch (e) {}
+                        this.insert = null;
+                    }
+                }
+            }
+
+            // ---------- APP CONTROLLER ----------
+            const App = {
+                audioEngine: null,
+                initialized: false,
+
+                async init() {
+                    try {
+                        // Open DB
+                        state.db = await openDB();
+                        dom.dbStatus.textContent = '📦 DB: พร้อม';
+
+                        // Init audio engine
+                        this.audioEngine = new AudioEngine();
+
+                        // Load all data
+                        await this.loadAllData();
+
+                        // Load player state
+                        await this.loadPlayerState();
+
+                        // Setup UI
+                        this.setupUI();
+
+                        // Setup auto scheduler
+                        this.setupScheduler();
+
+                        this.initialized = true;
+                        dom.statusBarInfo.textContent = 'พร้อมใช้งาน';
+
+                        // If there was a last played track, try to resume
+                        if (state.player.currentMusicId && state.player.isPlaying) {
+                            const music = state.music.find(m => m.id === state.player.currentMusicId);
+                            if (music) {
+                                await this.playMusicById(music.id, state.player.currentPosition);
+                            }
+                        }
+
+                        console.log('✅ App initialized');
+                    } catch (e) {
+                        console.error('Init error:', e);
+                        dom.dbStatus.textContent = '⚠️ DB Error';
+                        dom.statusBarInfo.textContent = 'เกิดข้อผิดพลาด';
+                    }
+                },
+
+                async loadAllData() {
+                    try {
+                        state.music = await dbGetAll(STORES.music) || [];
+                        state.inserts = await dbGetAll(STORES.insert) || [];
+                        state.playlists = await dbGetAll(STORES.playlist) || [];
+                        state.schedules = await dbGetAll(STORES.schedule) || [];
+                        state.history = await dbGetAll(STORES.history) || [];
+
+                        const settings = await dbGet(STORES.settings, 'app_settings');
+                        if (settings) {
+                            state.settings = { ...state.settings, ...settings };
+                        }
+                        const autoState = await dbGet(STORES.settings, 'auto_state');
+                        if (autoState) {
+                            state.isAutoOn = autoState.value !== false;
+                        }
+                        dom.autoToggle.classList.toggle('active', state.isAutoOn);
+                        dom.autoStartTime.value = state.settings.startTime || '07:00';
+                        dom.autoEndTime.value = state.settings.endTime || '16:30';
+
+                        this.renderAll();
+                    } catch (e) {
+                        console.warn('Load data error:', e);
+                    }
+                },
+
+                async loadPlayerState() {
+                    try {
+                        const ps = await dbGet(STORES.playerState, 'player_state');
+                        if (ps) {
+                            state.player.currentMusicId = ps.currentMusicId || null;
+                            state.player.currentPosition = ps.currentPosition || 0;
+                            state.player.volume = ps.volume || 80;
+                            state.player.playlistId = ps.playlistId || null;
+                            state.player.playlistIndex = ps.playlistIndex || 0;
+                            state.player.isPlaying = ps.isPlaying || false;
+                            state.player.shuffle = ps.shuffle || false;
+                            state.player.repeat = ps.repeat || 'none';
+                            state.player.volume = ps.volume || 80;
+                            dom.volumeSlider.value = state.player.volume;
+                            if (this.audioEngine) {
+                                this.audioEngine.setVolume(state.player.volume);
+                            }
+                        }
+                        dom.shuffleBtn.style.color = state.player.shuffle ? 'var(--accent)' : '';
+                        dom.repeatBtn.style.color = state.player.repeat !== 'none' ? 'var(--accent)' : '';
+                        dom.repeatBtn.title = state.player.repeat === 'none' ? 'ทำซ้ำ' : state.player.repeat === 'one' ?
+                            'ทำซ้ำเพลงนี้' : 'ทำซ้ำทั้งหมด';
+                    } catch (e) {
+                        console.warn('Load player state error:', e);
+                    }
+                },
+
+                async savePlayerState() {
+                    try {
+                        const data = {
+                            id: 'player_state',
+                            currentMusicId: state.player.currentMusicId,
+                            currentPosition: state.player.currentPosition,
+                            volume: state.player.volume,
+                            playlistId: state.player.playlistId,
+                            playlistIndex: state.player.playlistIndex,
+                            isPlaying: state.player.isPlaying,
+                            shuffle: state.player.shuffle,
+                            repeat: state.player.repeat,
+                            updatedAt: new Date().toISOString()
+                        };
+                        await dbPut(STORES.playerState, data);
+                    } catch (e) {
+                        console.warn('Save player state error:', e);
+                    }
+                },
+
+                // ---------- RENDER ----------
+                renderAll() {
+                    this.renderMusic();
+                    this.renderInsert();
+                    this.renderPlaylist();
+                    this.renderSchedules();
+                    this.renderHistory();
+                    this.updatePlayerUI();
+                },
+
+                renderMusic() {
+                    const list = dom.musicList;
+                    if (!state.music.length) {
+                        list.innerHTML =
+                            `<div class="empty-state"><i class="fas fa-music"></i>ยังไม่มีเพลงในคลัง<br><span class="text-muted">เพิ่มไฟล์ MP3 ได้เลย</span></div>`;
+                        return;
+                    }
+                    list.innerHTML = state.music.map(m => `
+                        <div class="item-row" data-id="${m.id}">
+                            <div class="info">
+                                <span class="name">${m.name || 'ไม่ระบุชื่อ'}</span>
+                                <span class="meta">${m.duration ? formatTime(m.duration) : '--:--'} · ${m.fileSize ? (m.fileSize/1024/1024).toFixed(1)+' MB' : ''}</span>
+                            </div>
+                            <div class="actions">
+                                <button class="play-action" data-action="play" data-id="${m.id}"><i class="fas fa-play"></i></button>
+                                <button data-action="delete" data-id="${m.id}"><i class="fas fa-trash-alt"></i></button>
+                            </div>
+                        </div>
+                    `).join('');
+                },
+
+                renderInsert() {
+                    const list = dom.insertList;
+                    const filter = state.currentGroupFilter;
+                    let items = state.inserts;
+                    if (filter !== 'all') {
+                        items = items.filter(i => i.group === filter);
+                    }
+                    if (!items.length) {
+                        list.innerHTML =
+                            `<div class="empty-state"><i class="fas fa-microphone"></i>ไม่มีเสียงแทรก${filter !== 'all' ? ' ในกลุ่มนี้' : ''}</div>`;
+                        return;
+                    }
+                    list.innerHTML = items.map(i => `
+                        <div class="item-row" data-id="${i.id}">
+                            <div class="info">
+                                <span class="name">${i.name || 'ไม่ระบุ'}</span>
+                                <span class="meta">${i.group || 'ทั่วไป'} · ${i.duration ? formatTime(i.duration) : '--:--'}</span>
+                            </div>
+                            <div class="actions">
+                                <button class="play-action" data-action="play-insert" data-id="${i.id}"><i class="fas fa-play"></i></button>
+                                <button data-action="delete-insert" data-id="${i.id}"><i class="fas fa-trash-alt"></i></button>
+                            </div>
+                        </div>
+                    `).join('');
+                },
+
+                renderPlaylist() {
+                    const list = dom.playlistList;
+                    if (!state.playlists.length) {
+                        list.innerHTML =
+                            `<div class="empty-state" style="padding:8px 0; font-size:0.8rem;">ยังไม่มี Playlist</div>`;
+                        return;
+                    }
+                    list.innerHTML = state.playlists.map(p => `
+                        <div class="item-row" data-id="${p.id}">
+                            <div class="info">
+                                <span class="name">${p.name}</span>
+                                <span class="meta">${p.musicIds?.length || 0} เพลง</span>
+                            </div>
+                            <div class="actions">
+                                <button class="play-action" data-action="play-playlist" data-id="${p.id}"><i class="fas fa-play"></i></button>
+                                <button data-action="delete-playlist" data-id="${p.id}"><i class="fas fa-trash-alt"></i></button>
+                            </div>
+                        </div>
+                    `).join('');
+                },
+
+                renderSchedules() {
+                    const container = dom.scheduleList;
+                    if (!state.schedules.length) {
+                        dom.scheduleEmpty.style.display = 'block';
+                        container.innerHTML = '';
+                        return;
+                    }
+                    dom.scheduleEmpty.style.display = 'none';
+                    container.innerHTML = state.schedules.map(s => `
+                        <div class="schedule-item" style="margin-bottom:6px; border-left-color:${s.isActive ? 'var(--accent)' : 'var(--border-color)'};">
+                            <div class="info">
+                                <div class="name">${s.name}</div>
+                                <div class="desc">${this.getScheduleDesc(s)}</div>
+                            </div>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <button class="btn-outline" style="padding:2px 8px; font-size:0.65rem;" data-action="delete-schedule" data-id="${s.id}"><i class="fas fa-trash-alt"></i></button>
+                                <div class="toggle ${s.isActive ? 'active' : ''}" data-action="toggle-schedule" data-id="${s.id}"></div>
+                            </div>
+                        </div>
+                    `).join('');
+                },
+
+                getScheduleDesc(s) {
+                    if (s.type === 'interval') return `ทุก ${s.intervalMinutes} นาที`;
+                    if (s.type === 'time') return `เวลา ${s.time}${s.days ? ' · ' + s.days.join(', ') : ''}`;
+                    if (s.type === 'songEnd') return 'เมื่อเพลงจบ';
+                    if (s.type === 'random') return `สุ่ม ${s.minInterval}-${s.maxInterval} นาที`;
+                    return s.type || '--';
+                },
+
+                renderHistory() {
+                    const list = dom.historyList;
+                    const items = state.history.slice(-50).reverse();
+                    if (!items.length) {
+                        dom.historyEmpty.style.display = 'block';
+                        list.innerHTML = '';
+                        return;
+                    }
+                    dom.historyEmpty.style.display = 'none';
+                    list.innerHTML = items.map(h => `
+                        <div class="item-row" style="border-left-color:${h.type === 'insert' ? 'var(--accent)' : '#4a9eff'};">
+                            <div class="info">
+                                <span class="name">${h.itemName || 'ไม่ระบุ'}</span>
+                                <span class="meta">${h.type === 'insert' ? '🔊 แทรก' : '🎵 เพลง'} · ${new Date(h.timestamp).toLocaleTimeString('th-TH')}</span>
+                            </div>
+                            <span style="font-size:0.7rem; color:var(--text-secondary);">${h.duration ? formatTime(h.duration) : ''}</span>
+                        </div>
+                    `).join('');
+                },
+
+                updatePlayerUI() {
+                    const p = state.player;
+                    const trackName = dom.currentTrackName;
+                    const trackSub = dom.currentTrackSub;
+                    const playBtn = dom.playBtn;
+                    const statusBadge = dom.statusBadge;
+
+                    let music = null;
+                    if (p.currentMusicId) {
+                        music = state.music.find(m => m.id === p.currentMusicId);
+                    }
+                    if (music) {
+                        trackName.textContent = music.name || 'ไม่ระบุชื่อ';
+                        const dur = this.audioEngine ? this.audioEngine.getDuration() : p.duration || 0;
+                        const pos = this.audioEngine ? this.audioEngine.getCurrentTime() : p.currentPosition || 0;
+                        trackSub.textContent = `📀 ${formatTime(pos)} / ${formatTime(dur || 0)}`;
+                        p.duration = dur || 0;
+                        p.currentPosition = pos || 0;
+                    } else {
+                        trackName.textContent = 'ไม่มีเพลง';
+                        trackSub.textContent = 'หยุดอยู่';
+                    }
+
+                    if (p.isPlaying) {
+                        playBtn.innerHTML = '<i class="fas fa-pause"></i>';
+                        statusBadge.textContent = '▶️ กำลังเล่น';
+                    } else {
+                        playBtn.innerHTML = '<i class="fas fa-play"></i>';
+                        statusBadge.textContent = p.currentMusicId ? '⏸ หยุดชั่วคราว' : '⏹ หยุด';
+                    }
+
+                    if (p.playlistId) {
+                        const pl = state.playlists.find(pl => pl.id === p.playlistId);
+                        dom.playlistBadge.textContent = pl ? `📋 ${pl.name}` : 'ไม่มี Playlist';
+                    } else {
+                        dom.playlistBadge.textContent = 'ไม่มี Playlist';
+                    }
+
+                    const dur = p.duration || 0;
+                    const pos = p.currentPosition || 0;
+                    dom.currentTime.textContent = formatTime(pos);
+                    dom.durationTime.textContent = formatTime(dur);
+                    if (dur > 0 && isFinite(dur)) {
+                        dom.progressSlider.value = Math.min(100, (pos / dur) * 100);
+                    } else {
+                        dom.progressSlider.value = 0;
+                    }
+
+                    dom.volumeSlider.value = p.volume;
+                },
+
+                // ---------- MUSIC OPERATIONS ----------
+                async addMusic(files) {
+                    for (const file of files) {
+                        if (!file.type.includes('audio/mpeg') && !file.name.endsWith('.mp3')) {
+                            console.warn('Skipping non-MP3:', file.name);
+                            continue;
+                        }
+                        try {
+                            const duration = await this.getAudioDuration(file);
+                            const music = {
+                                id: genId(),
+                                name: file.name.replace(/\.[^/.]+$/, ''),
+                                fileName: file.name,
+                                fileSize: file.size,
+                                duration: duration || 0,
+                                fileData: file,
+                                uploadedAt: new Date().toISOString()
+                            };
+                            await dbPut(STORES.music, music);
+                            state.music.push(music);
+                            await this.addHistory('music', music.id, music.name, duration || 0);
+                        } catch (e) {
+                            console.error('Add music error:', e);
+                        }
+                    }
+                    this.renderMusic();
+                    await this.savePlayerState();
+                },
+
+                getAudioDuration(file) {
+                    return new Promise((resolve) => {
+                        try {
+                            const url = URL.createObjectURL(file);
+                            const audio = new Audio();
+                            audio.src = url;
+                            audio.onloadedmetadata = () => {
+                                const d = audio.duration;
+                                URL.revokeObjectURL(url);
+                                audio.src = '';
+                                resolve(d || 0);
+                            };
+                            audio.onerror = () => {
+                                URL.revokeObjectURL(url);
+                                audio.src = '';
+                                resolve(0);
+                            };
+                            setTimeout(() => {
+                                URL.revokeObjectURL(url);
+                                audio.src = '';
+                                resolve(0);
+                            }, 5000);
+                        } catch (e) {
+                            resolve(0);
+                        }
+                    });
+                },
+
+                async deleteMusic(id) {
+                    const music = state.music.find(m => m.id === id);
+                    if (!music) return;
+                    await dbDelete(STORES.music, id);
+                    state.music = state.music.filter(m => m.id !== id);
+                    if (state.player.currentMusicId === id) {
+                        state.player.currentMusicId = null;
+                        state.player.isPlaying = false;
+                        if (this.audioEngine && this.audioEngine.main) {
+                            try {
+                                this.audioEngine.main.pause();
+                                if (this.audioEngine.main.src) {
+                                    try { URL.revokeObjectURL(this.audioEngine.main.src); } catch (e) {}
+                                    this.audioEngine.main.src = '';
+                                }
+                            } catch (e) {}
+                        }
+                    }
+                    this.renderMusic();
+                    this.updatePlayerUI();
+                    await this.savePlayerState();
+                },
+
+                // ---------- INSERT OPERATIONS ----------
+                async addInsert(files, group = 'ประกาศ') {
+                    for (const file of files) {
+                        if (!file.type.includes('audio/mpeg') && !file.name.endsWith('.mp3')) continue;
+                        try {
+                            const duration = await this.getAudioDuration(file);
+                            const insert = {
+                                id: genId(),
+                                name: file.name.replace(/\.[^/.]+$/, ''),
+                                fileName: file.name,
+                                fileSize: file.size,
+                                duration: duration || 0,
+                                fileData: file,
+                                group: group || 'ประกาศ',
+                                priority: 2,
+                                uploadedAt: new Date().toISOString()
+                            };
+                            await dbPut(STORES.insert, insert);
+                            state.inserts.push(insert);
+                            await this.addHistory('insert', insert.id, insert.name, duration || 0);
+                        } catch (e) {
+                            console.error('Add insert error:', e);
+                        }
+                    }
+                    this.renderInsert();
+                    await this.savePlayerState();
+                },
+
+                async deleteInsert(id) {
+                    await dbDelete(STORES.insert, id);
+                    state.inserts = state.inserts.filter(i => i.id !== id);
+                    this.renderInsert();
+                },
+
+                // ---------- PLAYLIST OPERATIONS ----------
+                async createPlaylist(name) {
+                    if (!name) {
+                        name = prompt('ชื่อ Playlist:');
+                        if (!name) return;
+                    }
+                    const playlist = {
+                        id: genId(),
+                        name: name,
+                        musicIds: [],
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                        isActive: true
+                    };
+                    await dbPut(STORES.playlist, playlist);
+                    state.playlists.push(playlist);
+                    this.renderPlaylist();
+                },
+
+                async deletePlaylist(id) {
+                    await dbDelete(STORES.playlist, id);
+                    state.playlists = state.playlists.filter(p => p.id !== id);
+                    if (state.player.playlistId === id) {
+                        state.player.playlistId = null;
+                        state.player.playlistIndex = 0;
+                    }
+                    this.renderPlaylist();
+                    this.updatePlayerUI();
+                    await this.savePlayerState();
+                },
+
+                // ---------- SCHEDULE OPERATIONS ----------
+                async addSchedule() {
+                    const name = prompt('ชื่อตาราง:');
+                    if (!name) return;
+                    const type = prompt('ประเภท (interval/time/songEnd/random):', 'interval');
+                    if (!type) return;
+                    let data = { name, type, isActive: true, insertIds: [], priority: 2, fadeIn: 0.5, fadeOut: 0.5,
+                        volumeReduction: 20, stopMusic: false };
+
+                    if (!state.inserts.length) {
+                        alert('กรุณาเพิ่มเสียงแทรกก่อน');
+                        return;
+                    }
+                    const insertNames = state.inserts.map((i, idx) => `${idx+1}. ${i.name} (${i.group})`).join('\n');
+                    const choice = prompt(`เลือกเสียงแทรก (หมายเลข):\n${insertNames}`, '1');
+                    const idx = parseInt(choice) - 1;
+                    if (isNaN(idx) || idx < 0 || idx >= state.inserts.length) {
+                        alert('เลือกไม่ถูกต้อง');
+                        return;
+                    }
+                    data.insertIds = [state.inserts[idx].id];
+
+                    if (type === 'interval') {
+                        const mins = prompt('ทุกกี่นาที?', '3');
+                        data.intervalMinutes = parseInt(mins) || 3;
+                    } else if (type === 'time') {
+                        const time = prompt('เวลา (HH:MM):', '08:00');
+                        data.time = time || '08:00';
+                        const days = prompt('วันที่ (mon,tue,wed,thu,fri,sat,sun) หรือเว้นว่าง:', 'mon,tue,wed,thu,fri');
+                        if (days) data.days = days.split(',').map(d => d.trim());
+                    } else if (type === 'random') {
+                        const min = prompt('นาทีต่ำสุด:', '2');
+                        const max = prompt('นาทีสูงสุด:', '5');
+                        data.minInterval = parseInt(min) || 2;
+                        data.maxInterval = parseInt(max) || 5;
+                    }
+
+                    const schedule = {
+                        ...data,
+                        id: genId(),
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString()
+                    };
+                    await dbPut(STORES.schedule, schedule);
+                    state.schedules.push(schedule);
+                    this.renderSchedules();
+                },
+
+                async deleteSchedule(id) {
+                    await dbDelete(STORES.schedule, id);
+                    state.schedules = state.schedules.filter(s => s.id !== id);
+                    this.renderSchedules();
+                },
+
+                async toggleSchedule(id) {
+                    const sched = state.schedules.find(s => s.id === id);
+                    if (!sched) return;
+                    sched.isActive = !sched.isActive;
+                    await dbPut(STORES.schedule, sched);
+                    this.renderSchedules();
+                },
+
+                // ---------- HISTORY ----------
+                async addHistory(type, itemId, itemName, duration) {
+                    const entry = {
+                        id: genId(),
+                        type: type,
+                        itemId: itemId,
+                        itemName: itemName || 'ไม่ระบุ',
+                        timestamp: new Date().toISOString(),
+                        duration: duration || 0,
+                        position: state.player.currentPosition || 0
+                    };
+                    await dbPut(STORES.history, entry);
+                    state.history.push(entry);
+                    if (state.history.length > 500) {
+                        const toRemove = state.history.slice(0, 100);
+                        for (const h of toRemove) {
+                            await dbDelete(STORES.history, h.id);
+                        }
+                        state.history = state.history.slice(100);
+                    }
+                    this.renderHistory();
+                },
+
+                async exportHistoryCSV() {
+                    if (!state.history.length) {
+                        alert('ไม่มีประวัติให้ Export');
+                        return;
+                    }
+                    let csv = 'Time,Type,Name,Duration\n';
+                    for (const h of state.history) {
+                        csv +=
+                            `${new Date(h.timestamp).toLocaleString('th-TH')},${h.type},${h.itemName},${formatTime(h.duration)}\n`;
+                    }
+                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = `history_${new Date().toISOString().slice(0,10)}.csv`;
+                    link.click();
+                    URL.revokeObjectURL(link.href);
+                },
+
+                // ---------- PLAYBACK (FIXED) ----------
+                async playMusicById(id, position = 0) {
+                    const music = state.music.find(m => m.id === id);
+                    if (!music) {
+                        console.warn('Music not found:', id);
+                        return;
+                    }
+
+                    try {
+                        // Stop any insert
+                        if (this.audioEngine.isInsertingNow()) {
+                            this.audioEngine.stopInsert(true);
+                        }
+
+                        // Ensure audio engine is ready
+                        this.audioEngine.ensureMainAudio();
+
+                        // Set volume
+                        this.audioEngine.setVolume(state.player.volume);
+
+                        // Play
+                        await this.audioEngine.playMusic(id, music.fileData, position, true);
+
+                        state.player.currentMusicId = id;
+                        state.player.currentPosition = position || 0;
+                        state.player.isPlaying = true;
+
+                        // Wait for metadata
+                        await new Promise((resolve) => {
+                            const checkDuration = () => {
+                                const dur = this.audioEngine.getDuration();
+                                if (dur > 0) {
+                                    state.player.duration = dur;
+                                    resolve();
+                                } else {
+                                    setTimeout(checkDuration, 200);
+                                }
+                            };
+                            checkDuration();
+                            // Fallback timeout
+                            setTimeout(resolve, 3000);
+                        });
+
+                        // Start monitoring
+                        this.startProgressTracking();
+
+                        // Clear old play check
+                        if (state.player._playCheck) {
+                            clearInterval(state.player._playCheck);
+                            state.player._playCheck = null;
+                        }
+
+                        // Monitor for unexpected pause
+                        state.player._playCheck = setInterval(() => {
+                            if (state.player.isPlaying && this.audioEngine && this.audioEngine.main) {
+                                if (this.audioEngine.main.paused && this.audioEngine.main.src) {
+                                    console.warn('⚠️ Audio paused unexpectedly, resuming...');
+                                    this.audioEngine.main.play().catch(() => {});
+                                    dom.audioStatusBadge.textContent = '🔄 กู้คืน...';
+                                }
+                            }
+                        }, 2000);
+
+                        this.updatePlayerUI();
+                        await this.savePlayerState();
+
+                        // Add to history
+                        await this.addHistory('music', id, music.name, state.player.duration);
+
+                        console.log('▶️ Playing:', music.name);
+                        dom.audioStatusBadge.textContent = '🔊 เล่นอยู่';
+                    } catch (e) {
+                        console.error('Play error:', e);
+                        state.player.isPlaying = false;
+                        dom.audioStatusBadge.textContent = '⚠️ Error';
+                        this.updatePlayerUI();
+                    }
+                },
+
+                startProgressTracking() {
+                    if (state.player.timer) {
+                        clearInterval(state.player.timer);
+                        state.player.timer = null;
+                    }
+
+                    state.player.timer = setInterval(() => {
+                        if (this.audioEngine && this.audioEngine.main) {
+                            try {
+                                // Check if audio element still exists
+                                if (!this.audioEngine.main.src || this.audioEngine.main.src === '') {
+                                    console.warn('⚠️ Audio src lost');
+                                    return;
+                                }
+
+                                const current = this.audioEngine.getCurrentTime();
+                                const duration = this.audioEngine.getDuration();
+
+                                if (isFinite(current) && isFinite(duration)) {
+                                    state.player.currentPosition = current || 0;
+                                    state.player.duration = duration || 0;
+                                    this.updatePlayerUI();
+                                }
+
+                                // Check for song end
+                                if (duration > 0 && current >= duration - 0.5) {
+                                    this.onSongEnd();
+                                }
+                            } catch (e) {
+                                // Silent fail
+                            }
+                        }
+                    }, 300);
+                },
+
+                onSongEnd() {
+                    console.log('🏁 Song ended');
+
+                    // Stop monitoring
+                    if (state.player._playCheck) {
+                        clearInterval(state.player._playCheck);
+                        state.player._playCheck = null;
+                    }
+
+                    // Check repeat mode
+                    if (state.player.repeat === 'one') {
+                        const id = state.player.currentMusicId;
+                        if (id) {
+                            this.playMusicById(id, 0);
+                        }
+                        return;
+                    }
+
+                    // Check playlist
+                    if (state.player.playlistId) {
+                        const playlist = state.playlists.find(p => p.id === state.player.playlistId);
+                        if (playlist && playlist.musicIds && playlist.musicIds.length) {
+                            let nextIndex = state.player.playlistIndex + 1;
+                            if (nextIndex >= playlist.musicIds.length) {
+                                if (state.player.repeat === 'all') {
+                                    nextIndex = 0;
+                                } else {
+                                    state.player.isPlaying = false;
+                                    this.updatePlayerUI();
+                                    this.savePlayerState();
+                                    return;
+                                }
+                            }
+                            const nextId = playlist.musicIds[nextIndex];
+                            if (nextId) {
+                                state.player.playlistIndex = nextIndex;
+                                this.playMusicById(nextId, 0);
+                                return;
+                            }
+                        }
+                    }
+
+                    // No playlist, stop
+                    state.player.isPlaying = false;
+                    this.updatePlayerUI();
+                    this.savePlayerState();
+                    dom.audioStatusBadge.textContent = '⏸ หยุด';
+                },
+
+                async togglePlay() {
+                    if (!state.player.currentMusicId) {
+                        if (state.music.length) {
+                            await this.playMusicById(state.music[0].id, 0);
+                        }
+                        return;
+                    }
+
+                    if (state.player.isPlaying) {
+                        // Pause
+                        if (this.audioEngine) {
+                            const pos = this.audioEngine.pauseMusic();
+                            state.player.currentPosition = pos || 0;
+                            state.player.isPlaying = false;
+                            if (state.player.timer) {
+                                clearInterval(state.player.timer);
+                                state.player.timer = null;
+                            }
+                            if (state.player._playCheck) {
+                                clearInterval(state.player._playCheck);
+                                state.player._playCheck = null;
+                            }
+                            dom.audioStatusBadge.textContent = '⏸ หยุด';
+                            this.updatePlayerUI();
+                            await this.savePlayerState();
+                        }
+                    } else {
+                        // Resume
+                        if (this.audioEngine && this.audioEngine.main && this.audioEngine.main.src) {
+                            this.audioEngine.ensureMainAudio();
+                            this.audioEngine.main.volume = state.player.volume / 100;
+
+                            const resumed = await this.audioEngine.resumeMusic();
+                            if (resumed) {
+                                state.player.isPlaying = true;
+                                this.startProgressTracking();
+                                this.updatePlayerUI();
+                                await this.savePlayerState();
+                                dom.audioStatusBadge.textContent = '🔊 เล่นอยู่';
+                            } else {
+                                // Reload
+                                const music = state.music.find(m => m.id === state.player.currentMusicId);
+                                if (music) {
+                                    await this.playMusicById(music.id, state.player.currentPosition);
+                                }
+                            }
+                        } else {
+                            const music = state.music.find(m => m.id === state.player.currentMusicId);
+                            if (music) {
+                                await this.playMusicById(music.id, state.player.currentPosition);
+                            }
+                        }
+                    }
+                },
+
+                async nextTrack() {
+                    const playlistId = state.player.playlistId;
+                    if (playlistId) {
+                        const playlist = state.playlists.find(p => p.id === playlistId);
+                        if (playlist && playlist.musicIds && playlist.musicIds.length) {
+                            let idx = state.player.playlistIndex + 1;
+                            if (idx >= playlist.musicIds.length) {
+                                if (state.player.repeat === 'all') idx = 0;
+                                else return;
+                            }
+                            const id = playlist.musicIds[idx];
+                            if (id) {
+                                state.player.playlistIndex = idx;
+                                await this.playMusicById(id, 0);
+                            }
+                            return;
+                        }
+                    }
+                    if (state.music.length) {
+                        const idx = state.music.findIndex(m => m.id === state.player.currentMusicId);
+                        const nextIdx = (idx + 1) % state.music.length;
+                        await this.playMusicById(state.music[nextIdx].id, 0);
+                    }
+                },
+
+                async prevTrack() {
+                    const playlistId = state.player.playlistId;
+                    if (playlistId) {
+                        const playlist = state.playlists.find(p => p.id === playlistId);
+                        if (playlist && playlist.musicIds && playlist.musicIds.length) {
+                            let idx = state.player.playlistIndex - 1;
+                            if (idx < 0) idx = playlist.musicIds.length - 1;
+                            const id = playlist.musicIds[idx];
+                            if (id) {
+                                state.player.playlistIndex = idx;
+                                await this.playMusicById(id, 0);
+                            }
+                            return;
+                        }
+                    }
+                    if (state.music.length) {
+                        const idx = state.music.findIndex(m => m.id === state.player.currentMusicId);
+                        const prevIdx = (idx - 1 + state.music.length) % state.music.length;
+                        await this.playMusicById(state.music[prevIdx].id, 0);
+                    }
+                },
+
+                toggleShuffle() {
+                    state.player.shuffle = !state.player.shuffle;
+                    dom.shuffleBtn.style.color = state.player.shuffle ? 'var(--accent)' : '';
+                    this.savePlayerState();
+                },
+
+                toggleRepeat() {
+                    const modes = ['none', 'one', 'all'];
+                    const idx = modes.indexOf(state.player.repeat);
+                    state.player.repeat = modes[(idx + 1) % modes.length];
+                    dom.repeatBtn.style.color = state.player.repeat !== 'none' ? 'var(--accent)' : '';
+                    dom.repeatBtn.title = state.player.repeat === 'none' ? 'ทำซ้ำ' : state.player.repeat === 'one' ?
+                        'ทำซ้ำเพลงนี้' : 'ทำซ้ำทั้งหมด';
+                    this.savePlayerState();
+                },
+
+                seekTo(position) {
+                    if (this.audioEngine && this.audioEngine.main) {
+                        const dur = this.audioEngine.getDuration();
+                        if (dur > 0 && isFinite(dur)) {
+                            const pos = (position / 100) * dur;
+                            this.audioEngine.setPosition(pos);
+                            state.player.currentPosition = pos;
+                            this.updatePlayerUI();
+                            this.savePlayerState();
+                        }
+                    }
+                },
+
+                setVolume(vol) {
+                    state.player.volume = Math.min(100, Math.max(0, parseInt(vol) || 0));
+                    if (this.audioEngine) {
+                        this.audioEngine.setVolume(state.player.volume);
+                    }
+                    dom.volumeSlider.value = state.player.volume;
+                    this.savePlayerState();
+                },
+
+                // ---------- INSERT PLAYBACK ----------
+                async playInsertById(id) {
+                    const insert = state.inserts.find(i => i.id === id);
+                    if (!insert) {
+                        console.warn('Insert not found:', id);
+                        return;
+                    }
+
+                    try {
+                        if (this.audioEngine.isInsertingNow()) {
+                            this.audioEngine.stopInsert(true);
+                        }
+
+                        const isMainPlaying = state.player.isPlaying;
+                        if (isMainPlaying && this.audioEngine) {
+                            const pos = this.audioEngine.getCurrentTime();
+                            state.player.currentPosition = pos || 0;
+                        }
+
+                        await this.audioEngine.playInsert(insert.fileData, {
+                            fadeIn: 0.5,
+                            volume: 80,
+                            reduceMain: true,
+                            mainVolumeReduction: 20,
+                            stopMain: false
+                        });
+
+                        await this.addHistory('insert', insert.id, insert.name, insert.duration || 0);
+
+                        state.player.isInserting = false;
+                        if (this.audioEngine) {
+                            state.player.currentPosition = this.audioEngine.getCurrentTime() || 0;
+                            state.player.duration = this.audioEngine.getDuration() || 0;
+                        }
+                        this.updatePlayerUI();
+                        await this.savePlayerState();
+                        dom.audioStatusBadge.textContent = '🔊 แทรกจบ';
+                    } catch (e) {
+                        console.error('Insert playback error:', e);
+                        state.player.isInserting = false;
+                        this.updatePlayerUI();
+                    }
+                },
+
+                // ---------- SCHEDULER ENGINE ----------
+                setupScheduler() {
+                    if (state.scheduleIntervalCheck) {
+                        clearInterval(state.scheduleIntervalCheck);
+                    }
+                    this.checkSchedules();
+                    state.scheduleIntervalCheck = setInterval(() => {
+                        this.checkSchedules();
+                    }, 10000);
+                },
+
+                checkSchedules() {
+                    if (!state.isAutoOn) return;
+                    const now = new Date();
+                    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+                    const day = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][now.getDay()];
+
+                    const startTime = state.settings.startTime || '07:00';
+                    const endTime = state.settings.endTime || '16:30';
+                    const startMins = this.timeToMinutes(startTime);
+                    const endMins = this.timeToMinutes(endTime);
+                    const autoActiveDays = state.settings.activeDays || ['mon', 'tue', 'wed', 'thu', 'fri'];
+
+                    if (state.isAutoOn) {
+                        const isActiveDay = autoActiveDays.includes(day);
+                        const isWithinHours = currentMinutes >= startMins && currentMinutes < endMins;
+
+                        if (isActiveDay && isWithinHours) {
+                            if (!state.player.isPlaying && state.player.currentMusicId) {
+                                // Resume if we have a track
+                                this.togglePlay();
+                            }
+                        } else {
+                            if (state.player.isPlaying) {
+                                this.togglePlay();
+                            }
+                        }
+                    }
+
+                    for (const sched of state.schedules) {
+                        if (!sched.isActive) continue;
+                        if (!sched.insertIds || !sched.insertIds.length) continue;
+
+                        let shouldTrigger = false;
+                        let triggerName = '';
+
+                        if (sched.type === 'interval') {
+                            const interval = sched.intervalMinutes || 3;
+                            const lastTrigger = this.getLastTrigger(sched.id);
+                            const elapsed = lastTrigger ? (Date.now() - lastTrigger) / 1000 / 60 : interval + 1;
+                            if (elapsed >= interval) {
+                                shouldTrigger = true;
+                                triggerName = `⏱️ ทุก ${interval} นาที`;
+                            }
+                        } else if (sched.type === 'time') {
+                            const timeMins = this.timeToMinutes(sched.time || '08:00');
+                            const diff = currentMinutes - timeMins;
+                            if (diff >= 0 && diff < 1) {
+                                if (!sched.days || sched.days.length === 0 || sched.days.includes(day)) {
+                                    shouldTrigger = true;
+                                    triggerName = `🕐 ${sched.time}`;
+                                }
+                            }
+                        } else if (sched.type === 'random') {
+                            const min = sched.minInterval || 2;
+                            const max = sched.maxInterval || 5;
+                            const lastTrigger = this.getLastTrigger(sched.id);
+                            const elapsed = lastTrigger ? (Date.now() - lastTrigger) / 1000 / 60 : max + 1;
+                            const randomInterval = min + Math.random() * (max - min);
+                            if (elapsed >= randomInterval) {
+                                shouldTrigger = true;
+                                triggerName = `🎲 สุ่ม`;
+                            }
+                        }
+
+                        if (shouldTrigger) {
+                            this.triggerSchedule(sched, triggerName);
+                            this.setLastTrigger(sched.id);
+                        }
+                    }
+                },
+
+                timeToMinutes(timeStr) {
+                    if (!timeStr) return 0;
+                    const parts = timeStr.split(':');
+                    return parseInt(parts[0]) * 60 + parseInt(parts[1] || 0);
+                },
+
+                lastTriggers: {},
+
+                getLastTrigger(scheduleId) {
+                    return this.lastTriggers[scheduleId] || null;
+                },
+
+                setLastTrigger(scheduleId) {
+                    this.lastTriggers[scheduleId] = Date.now();
+                },
+
+                async triggerSchedule(schedule, triggerName) {
+                    if (!schedule.insertIds || !schedule.insertIds.length) return;
+                    const insertId = schedule.insertIds[0];
+                    const insert = state.inserts.find(i => i.id === insertId);
+                    if (!insert) return;
+
+                    console.log(`🔔 Schedule triggered: ${schedule.name} (${triggerName})`);
+
+                    try {
+                        if (this.audioEngine && this.audioEngine.isInsertingNow()) {
+                            console.log('⏳ Insert busy, skipping');
+                            return;
+                        }
+
+                        await this.playInsertById(insertId);
+                        await this.addHistory('insert', insert.id, `📋 ${schedule.name}: ${insert.name}`, insert.duration ||
+                            0);
+                    } catch (e) {
+                        console.error('Schedule trigger error:', e);
+                    }
+                },
+
+                // ---------- UI SETUP ----------
+                setupUI() {
+                    // Tabs
+                    dom.tabs.forEach(tab => {
+                        tab.addEventListener('click', () => {
+                            dom.tabs.forEach(t => t.classList.remove('active'));
+                            tab.classList.add('active');
+                            const target = tab.dataset.tab;
+                            dom.panels.forEach(p => p.classList.remove('active'));
+                            const panel = document.getElementById(target);
+                            if (panel) panel.classList.add('active');
+                        });
+                    });
+
+                    // Play controls
+                    dom.playBtn.addEventListener('click', () => this.togglePlay());
+                    dom.prevBtn.addEventListener('click', () => this.prevTrack());
+                    dom.nextBtn.addEventListener('click', () => this.nextTrack());
+                    dom.shuffleBtn.addEventListener('click', () => this.toggleShuffle());
+                    dom.repeatBtn.addEventListener('click', () => this.toggleRepeat());
+
+                    dom.progressSlider.addEventListener('input', (e) => {
+                        this.seekTo(parseFloat(e.target.value));
+                    });
+                    dom.progressSlider.addEventListener('change', (e) => {
+                        this.seekTo(parseFloat(e.target.value));
+                    });
+
+                    dom.volumeSlider.addEventListener('input', (e) => {
+                        this.setVolume(parseFloat(e.target.value));
+                    });
+
+                    // Music upload
+                    dom.musicFileInput.addEventListener('change', (e) => {
+                        if (e.target.files && e.target.files.length) {
+                            this.addMusic(e.target.files);
+                            e.target.value = '';
+                        }
+                    });
+                    dom.musicUploadArea.addEventListener('dragover', (e) => { e.preventDefault(); });
+                    dom.musicUploadArea.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        if (e.dataTransfer.files && e.dataTransfer.files.length) {
+                            this.addMusic(e.dataTransfer.files);
+                        }
+                    });
+                    dom.addMusicBtn.addEventListener('click', () => dom.musicFileInput.click());
+
+                    // Insert upload
+                    dom.insertFileInput.addEventListener('change', (e) => {
+                        if (e.target.files && e.target.files.length) {
+                            const group = prompt('กลุ่มเสียงแทรก (ประกาศ/ประชาสัมพันธ์/โฆษณา/แจ้งเตือน):', 'ประกาศ');
+                            this.addInsert(e.target.files, group || 'ประกาศ');
+                            e.target.value = '';
+                        }
+                    });
+                    dom.insertUploadArea.addEventListener('dragover', (e) => { e.preventDefault(); });
+                    dom.insertUploadArea.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        if (e.dataTransfer.files && e.dataTransfer.files.length) {
+                            const group = prompt('กลุ่มเสียงแทรก (ประกาศ/ประชาสัมพันธ์/โฆษณา/แจ้งเตือน):', 'ประกาศ');
+                            this.addInsert(e.dataTransfer.files, group || 'ประกาศ');
+                        }
+                    });
+                    dom.addInsertBtn.addEventListener('click', () => dom.insertFileInput.click());
+
+                    // Insert group filters
+                    dom.insertGroupFilters.forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            dom.insertGroupFilters.forEach(b => b.classList.remove('active'));
+                            btn.classList.add('active');
+                            state.currentGroupFilter = btn.dataset.group;
+                            this.renderInsert();
+                        });
+                    });
+
+                    // Playlist
+                    dom.newPlaylistBtn.addEventListener('click', () => this.createPlaylist());
+
+                    // Schedule
+                    dom.addScheduleBtn.addEventListener('click', () => this.addSchedule());
+
+                    // Auto toggle
+                    dom.autoToggle.addEventListener('click', async () => {
+                        state.isAutoOn = !state.isAutoOn;
+                        dom.autoToggle.classList.toggle('active', state.isAutoOn);
+                        await dbPut(STORES.settings, { id: 'auto_state', value: state.isAutoOn });
+                        if (!state.isAutoOn && state.player.isPlaying) {
+                            this.togglePlay();
+                        }
+                    });
+
+                    // History export
+                    dom.exportCsvBtn.addEventListener('click', () => this.exportHistoryCSV());
+
+                    // Event delegation for dynamic items
+                    document.addEventListener('click', async (e) => {
+                        const target = e.target.closest('button');
+                        if (!target) return;
+                        const action = target.dataset.action;
+                        const id = target.dataset.id;
+
+                        if (action === 'play') {
+                            if (id) await this.playMusicById(id, 0);
+                        } else if (action === 'delete') {
+                            if (id && confirm('ลบเพลงนี้?')) await this.deleteMusic(id);
+                        } else if (action === 'play-insert') {
+                            if (id) await this.playInsertById(id);
+                        } else if (action === 'delete-insert') {
+                            if (id && confirm('ลบเสียงแทรกนี้?')) await this.deleteInsert(id);
+                        } else if (action === 'play-playlist') {
+                            if (id) {
+                                const playlist = state.playlists.find(p => p.id === id);
+                                if (playlist && playlist.musicIds && playlist.musicIds.length) {
+                                    state.player.playlistId = id;
+                                    state.player.playlistIndex = 0;
+                                    const firstId = playlist.musicIds[0];
+                                    if (firstId) {
+                                        await this.playMusicById(firstId, 0);
+                                    }
+                                    this.updatePlayerUI();
+                                    await this.savePlayerState();
+                                } else {
+                                    alert('Playlist ว่าง');
+                                }
+                            }
+                        } else if (action === 'delete-playlist') {
+                            if (id && confirm('ลบ Playlist นี้?')) await this.deletePlaylist(id);
+                        } else if (action === 'delete-schedule') {
+                            if (id && confirm('ลบตารางนี้?')) await this.deleteSchedule(id);
+                        } else if (action === 'toggle-schedule') {
+                            if (id) await this.toggleSchedule(id);
+                        }
+                    });
+
+                    // Auto start/end time change
+                    dom.autoStartTime.addEventListener('change', async () => {
+                        state.settings.startTime = dom.autoStartTime.value;
+                        await dbPut(STORES.settings, { id: 'app_settings', ...state.settings });
+                    });
+                    dom.autoEndTime.addEventListener('change', async () => {
+                        state.settings.endTime = dom.autoEndTime.value;
+                        await dbPut(STORES.settings, { id: 'app_settings', ...state.settings });
+                    });
+
+                    // Handle beforeunload
+                    window.addEventListener('beforeunload', () => {
+                        if (this.audioEngine && this.audioEngine.main) {
+                            state.player.currentPosition = this.audioEngine.getCurrentTime() || 0;
+                        }
+                        if (state.player._playCheck) {
+                            clearInterval(state.player._playCheck);
+                        }
+                        if (state.player.timer) {
+                            clearInterval(state.player.timer);
+                        }
+                        this.savePlayerState();
+                    });
+
+                    // Keyboard shortcuts
+                    document.addEventListener('keydown', (e) => {
+                        if (e.target.tagName === 'INPUT') return;
+                        if (e.code === 'Space') {
+                            e.preventDefault();
+                            this.togglePlay();
+                        }
+                        if (e.code === 'ArrowRight') this.nextTrack();
+                        if (e.code === 'ArrowLeft') this.prevTrack();
+                    });
+
+                    this.updatePlayerUI();
+                    this.registerManifest();
+                },
+
+                registerManifest() {
+                    const manifest = {
+                        name: 'Offline Audio Player',
+                        short_name: 'OAP',
+                        description: 'Offline audio player with scheduler',
+                        start_url: '.',
+                        display: 'standalone',
+                        background_color: '#0f0e17',
+                        theme_color: '#1a1a2e',
+                        icons: [{
+                            src: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect width="100" height="100" fill="%231a1a2e"/%3E%3Ctext x="50" y="65" text-anchor="middle" font-size="60" fill="%23ff8906" font-family="sans-serif"%3E🎵%3C/text%3E%3C/svg%3E',
+                            sizes: '192x192',
+                            type: 'image/svg+xml'
+                        }]
+                    };
+                    const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('link');
+                    link.rel = 'manifest';
+                    link.href = url;
+                    document.head.appendChild(link);
+                }
+            };
+
+            // ---------- START ----------
+            document.addEventListener('DOMContentLoaded', () => {
+                App.init();
+            });
+
+        })();
+    </script>
+</body>
+</html>
